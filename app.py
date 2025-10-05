@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 import os
 from tools.daily_runner import run_daily_analysis
+from tools.scheduler import start_scheduler  # <-- otomatik zamanlayıcıyı çağırıyoruz
 
-# FastAPI uygulamasını başlatıyoruz
 app = FastAPI()
 
 @app.get("/")
@@ -16,8 +16,8 @@ def manual_run():
     run_daily_analysis()
     return {"status": "Analiz tamamlandı ve Telegram’a gönderildi ✅"}
 
-
-# 🚀 Uygulamanın Render üzerinde sürekli açık kalmasını sağlar
+# 🕒 Scheduler başlatıcı (otomatik 11:00 gönderimi)
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=10000)
+    start_scheduler()
+
+
