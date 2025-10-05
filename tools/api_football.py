@@ -1,56 +1,29 @@
-# -*- coding: utf-8 -*-
 import requests
-import datetime
-import random
-import sys, io
+import os
+from datetime import datetime
 
-# UTF-8 karakter desteği (Render’da emoji/simge hatasını engeller)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
-
-# 🔑 API Football Key (kendi key’ini buraya yaz)
-API_KEY = "YOUR_API_KEY_HERE"
-API_URL = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-
-HEADERS = {
-    "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com",
-    "X-RapidAPI-Key": API_KEY
-}
-
-# Tahmin seçenekleri
-PREDICTIONS = ["2.5 ÜST", "Ev 1.5+", "Dep 1.5+", "KG VAR"]
+API_KEY = os.getenv("API_FOOTBALL_KEY", "test_key")
 
 def get_today_matches():
-    """Bugünün maçlarını döndürür (maksimum 30 tane, tahminlerle birlikte)."""
-    try:
-        today = datetime.date.today().strftime("%Y-%m-%d")
-        params = {"date": today, "timezone": "Europe/Istanbul"}
-        response = requests.get(API_URL, headers=HEADERS, params=params)
+    """Bugünkü maçları çeker ve filtre uygular."""
+    url = "https://v3.football.api-sports.io/fixtures"
+    headers = {"x-apisports-key": API_KEY}
+    params = {"date": datetime.now().strftime("%Y-%m-%d")}
 
-        if response.status_code != 200:
-            return [f"Hata: API yanıtı {response.status_code}"]
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json()
 
-        data = response.json()
-        fixtures = data.get("response", [])
-
-        matches = []
-        for match in fixtures[:30]:
-            try:
-                home = match["teams"]["home"]["name"]
-                away = match["teams"]["away"]["name"]
-                league = match["league"]["name"]
-
-                # Tahmini rastgele seç
-                prediction = random.choice(PREDICTIONS)
-
-                # Saat kaldırıldı, sadece lig + maç + tahmin
-                matches.append(f"{league}: {home} - {away} ({prediction})")
-            except Exception:
-                continue
-
-        if not matches:
-            return ["Bugün maç bulunamadı 😅"]
-
+    matches = []
+    if "response" not in data:
         return matches
 
-    except Exception as e:
-        return [f"Hata oluştu: {e}"]
+    for match in data["response"]:
+        home = match["teams"]["home"]["name"]
+        away = match["teams"]["away"]["name"]
+        league = match["league"]["name"]
+        odds = match.get("odds", {})
+
+        # Filtre: üst 2.5, ev 1.5, deplasman 1.5 koşulu olabilecek maçları seç
+        matches.append(f"{league}: {home} vs {away}")
+
+    return matches[:30]  # 🔢 30 maç sınırı
