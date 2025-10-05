@@ -2,7 +2,9 @@ from .telegram_bot import send_telegram_message
 from .api_football import get_today_matches
 import datetime
 
+
 def run_daily_analysis():
+    """Günlük analiz çalıştırır ve bugünkü maçları Telegram’a gönderir"""
     today = datetime.date.today().strftime("%d %B %Y")
     message = f"📊 GOLEX Günlük Analiz ({today})\n\n"
     message += "⚽️ Bugünkü Maçlar:\n"
