@@ -4,6 +4,7 @@ from .telegram import send_telegram_message
 from .api_football import get_today_matches
 
 def run_daily_analysis():
+    """Günlük maç analizini çalıştırır ve Telegram’a gönderir."""
     today = datetime.date.today().strftime("%d %B %Y")
     message = f"📊 GOLEX Günlük Analiz ({today})\n\n"
     message += "⚽️ Bugünkü Maçlar:\n"
@@ -13,14 +14,18 @@ def run_daily_analysis():
         if not matches:
             message += "Bugün maç bulunamadı 😅"
         else:
-            for m in matches[:10]:
+            # 🔥 Artık 20 maça kadar listeleyecek
+            for m in matches[:20]:
                 message += f"• {m}\n"
     except Exception as e:
         message += f"Hata oluştu: {e}\n"
 
     message += "\n🔮 Tahminler istatistiklere göre sıralanacak."
 
-    # UTF-8 güvenli mesaj gönderimi
-    safe_message = message.encode('utf-8', errors='ignore').decode('utf-8')
-    print("Telegram mesajı gönderiliyor...")
-    send_telegram_message(safe_message)
+    try:
+        send_telegram_message(message)
+        print("✅ Telegram mesajı başarıyla gönderildi.")
+    except Exception as e:
+        print(f"⚠️ Telegram mesajı gönderilirken hata: {e}")
+
+
