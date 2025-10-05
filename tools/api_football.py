@@ -1,49 +1,56 @@
+# -*- coding: utf-8 -*-
 import requests
 import datetime
-import os
+import random
+import sys, io
 
-# ⚙️ API Football ayarları
-API_KEY = os.getenv("FOOTBALL_API_KEY", "BURAYA_API_KEYİNİ_YAZ")  # Render Environment Variable'dan okur
-BASE_URL = "https://v3.football.api-sports.io"
+# UTF-8 karakter desteği (Render’da emoji/simge hatasını engeller)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
+
+# 🔑 API Football Key (kendi key’ini buraya yaz)
+API_KEY = "YOUR_API_KEY_HERE"
+API_URL = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
+
+HEADERS = {
+    "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com",
+    "X-RapidAPI-Key": API_KEY
+}
+
+# Tahmin seçenekleri
+PREDICTIONS = ["2.5 ÜST", "Ev 1.5+", "Dep 1.5+", "KG VAR"]
 
 def get_today_matches():
-    """
-    Bugünkü futbol maçlarını çeker ve okunabilir liste olarak döndürür.
-    """
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    url = f"{BASE_URL}/fixtures?date={today}"
-
-    headers = {
-        "x-apisports-key": API_KEY,
-        "x-rapidapi-host": "v3.football.api-sports.io"
-    }
-
+    """Bugünün maçlarını döndürür (maksimum 30 tane, tahminlerle birlikte)."""
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        params = {"date": today, "timezone": "Europe/Istanbul"}
+        response = requests.get(API_URL, headers=HEADERS, params=params)
+
+        if response.status_code != 200:
+            return [f"Hata: API yanıtı {response.status_code}"]
+
         data = response.json()
+        fixtures = data.get("response", [])
 
         matches = []
-        for match in data.get("response", []):
-            fixture = match.get("fixture", {})
-            league = match.get("league", {}).get("name", "Lig Bilinmiyor")
-            home = match.get("teams", {}).get("home", {}).get("name", "Ev Sahibi")
-            away = match.get("teams", {}).get("away", {}).get("name", "Deplasman")
-            time = fixture.get("date", "")[11:16]  # Sadece saat kısmını al
+        for match in fixtures[:30]:
+            try:
+                home = match["teams"]["home"]["name"]
+                away = match["teams"]["away"]["name"]
+                league = match["league"]["name"]
 
-            matches.append(f"{time} — {home} vs {away} ({league})")
+                # Tahmini rastgele seç
+                prediction = random.choice(PREDICTIONS)
+
+                # Saat kaldırıldı, sadece lig + maç + tahmin
+                matches.append(f"{league}: {home} - {away} ({prediction})")
+            except Exception:
+                continue
 
         if not matches:
-            return ["Bugün maç bulunamadı ⚽️"]
+            return ["Bugün maç bulunamadı 😅"]
 
         return matches
 
-    except requests.exceptions.Timeout:
-        print("⚠️ API isteği zaman aşımına uğradı.")
-        return ["API isteği zaman aşımına uğradı."]
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ API isteği başarısız: {e}")
-        return [f"API isteği başarısız: {e}"]
     except Exception as e:
-        print(f"⚠️ Genel hata: {e}")
         return [f"Hata oluştu: {e}"]
