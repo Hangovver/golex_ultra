@@ -1,39 +1,36 @@
+# app.py
+# -*- coding: utf-8 -*-
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
+
 from fastapi import FastAPI
-import os
-import sys
-import io
 from tools.daily_runner import run_daily_analysis
 from tools.scheduler import start_scheduler
 
-# UTF-8 stdout (latin-1 hatalarını önler)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
-# FastAPI uygulaması
-app = FastAPI()
+# FastAPI uygulaması oluştur
+app = FastAPI(title="GOLEX AI ULTRA API", version="1.0")
 
 @app.get("/")
 def root():
-    """API test endpointi"""
-    return {"message": "🔥 GOLEX ULTRA API aktif ve çalışıyor!"}
+    """API’nin çalıştığını test etmek için"""
+    return {"message": "🔥 GOLEX AI ULTRA API aktif!"}
 
 @app.get("/run")
 def manual_run():
     """Elle analiz çalıştırmak için"""
-    try:
-        run_daily_analysis()
-        return {"status": "✅ Analiz tamamlandı ve Telegram’a gönderildi!"}
-    except Exception as e:
-        print(f"⚠️ Manuel çalıştırma hatası: {e}")
-        return {"error": str(e)}
+    run_daily_analysis()
+    return {"status": "✅ Analiz tamamlandı ve Telegram’a gönderildi!"}
 
-# 🚀 Scheduler’ı başlat (FastAPI açıldığında otomatik devreye girer)
+
+# Scheduler’ı başlat
 @app.on_event("startup")
-def start_scheduled_job():
+def start_background_tasks():
     print("⏰ Scheduler başlatılıyor...")
     start_scheduler()
     print("✅ Scheduler aktif.")
 
-# Render üzerinde app'i çalıştır
+
+# Render için çalıştırma (uvicorn)
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    uvicorn.run("app:app", host="0.0.0.0", port=10000)
