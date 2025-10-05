@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 import datetime
-from .telegram import send_telegram_message
+from .telegram_bot import send_telegram_message
 from .api_football import get_today_matches
+
 
 def run_daily_analysis():
     """Günlük maç analizini çalıştırır ve Telegram’a gönderir."""
@@ -14,7 +19,7 @@ def run_daily_analysis():
         if not matches:
             message += "Bugün maç bulunamadı 😅"
         else:
-            # 🔥 Artık 20 maça kadar listeleyecek
+            # Maksimum 20 maç göster
             for m in matches[:20]:
                 message += f"• {m}\n"
     except Exception as e:
@@ -27,5 +32,3 @@ def run_daily_analysis():
         print("✅ Telegram mesajı başarıyla gönderildi.")
     except Exception as e:
         print(f"⚠️ Telegram mesajı gönderilirken hata: {e}")
-
-
