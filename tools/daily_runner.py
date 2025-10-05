@@ -1,13 +1,9 @@
+# -*- coding: utf-8 -*-
 from .telegram_bot import send_telegram_message
 from .api_football import get_today_matches
 import datetime
 
 def run_daily_analysis():
-    """
-    Günlük futbol analizini çalıştırır:
-    - Bugünkü maçları API'den çeker
-    - Telegram'a gönderir
-    """
     today = datetime.date.today().strftime("%d %B %Y")
     message = f"📊 GOLEX Günlük Analiz ({today})\n\n"
     message += "⚽️ Bugünkü Maçlar:\n"
@@ -17,15 +13,15 @@ def run_daily_analysis():
         if not matches:
             message += "Bugün maç bulunamadı 😅"
         else:
-            for m in matches[:10]:  # sadece ilk 10 maçı göster
+            for m in matches[:10]:
                 message += f"• {m}\n"
     except Exception as e:
-        message += f"\n⚠️ Hata oluştu: {e}"
+        message += f"Hata oluştu: {e}\n"
 
-    message += "\n\n🔮 Tahminler istatistiklere göre sıralanacak."
-    
-    # Telegram’a gönder
+    message += "\n🔮 Tahminler istatistiklere göre sıralanacak."
+
+    # Türkçe karakter hatalarını önlemek için
+    message = message.encode("utf-8", errors="ignore").decode("utf-8")
+
     send_telegram_message(message)
-
-
 
