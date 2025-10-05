@@ -20,7 +20,7 @@ def run_daily_analysis():
             message += "Bugün maç bulunamadı 😅"
         else:
             # İlk 20 maçı listele
-            for m in matches[:20]:
+            for m in matches[:30]:
                 # Her maç satırı güvenli biçimde UTF-8'e dönüştürülür
                 safe_match = str(m).encode("utf-8", errors="ignore").decode("utf-8")
                 message += f"• {safe_match}\n"
@@ -34,3 +34,4 @@ def run_daily_analysis():
     print("Telegram mesajı gönderiliyor...")
     send_telegram_message(message)
     print("✅ Telegram’a gönderildi.")
+
