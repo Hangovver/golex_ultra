@@ -1,26 +1,22 @@
 # -*- coding: utf-8 -*-
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
+
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
 from .daily_runner import run_daily_analysis
-import pytz
-import time
 
 def start_scheduler():
-    """Scheduler'ı başlatır ve her gün 11:00'de analiz çalıştırır"""
+    """Her gün saat 11:00'de run_daily_analysis() fonksiyonunu çalıştırır."""
+    print("⏰ Scheduler başlatılıyor...")
     try:
-        print("⏰ Scheduler başlatılıyor...")
-        scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Istanbul"))
+        scheduler = BackgroundScheduler(timezone="Europe/Istanbul")
 
-        # Her gün saat 11:00'de çalışacak job
-        scheduler.add_job(run_daily_analysis, CronTrigger(hour=11, minute=0))
+        # 🕚 Her gün saat 11:00'de analiz çalıştır
+        scheduler.add_job(run_daily_analysis, 'cron', hour=11, minute=0)
 
+        # Scheduler'ı başlat
         scheduler.start()
         print(f"✅ Scheduler aktif: {datetime.now()} itibarıyla başlatıldı.")
-
-        # Render'ın kapanmaması için sürekli açık tut (loop)
-        while True:
-            time.sleep(600)  # 10 dakikada bir canlı tut
     except Exception as e:
-        print(f"❌ Scheduler başlatılamadı: {e}")
-
+        print(f"⚠️ Scheduler başlatılamadı: {e}")
