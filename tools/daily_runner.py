@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-import sys
-if hasattr(sys, "setdefaultencoding"):
-    sys.setdefaultencoding("utf-8")
+import sys, os, datetime
+sys.stdout.reconfigure(encoding='utf-8')
+os.environ["PYTHONIOENCODING"] = "utf-8"
 
 from .telegram_bot import send_telegram_message
 from .api_football import get_today_matches
-import datetime
 
 def run_daily_analysis():
     today = datetime.date.today().strftime("%d %B %Y")
@@ -23,8 +22,9 @@ def run_daily_analysis():
         message += f"Hata oluştu: {e}\n"
 
     message += "\n🔮 Tahminler istatistiklere göre sıralanacak."
-
     send_telegram_message(message)
+
+
 
 
 
