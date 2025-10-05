@@ -1,28 +1,36 @@
 import requests
-import os
 import datetime
+import os
 
-API_KEY = os.getenv("API_FOOTBALL_KEY")
-BASE_URL = "https://v3.football.api-sports.io/"
+# API Football ayarları
+API_KEY = os.getenv("FOOTBALL_API_KEY", "BURAYA_API_KEYİNİ_YAZ")
+BASE_URL = "https://v3.football.api-sports.io"
 
+# Bugünkü maçları çeken fonksiyon
 def get_today_matches():
-    """Bugünkü maçları API'den çeker"""
     today = datetime.date.today().strftime("%Y-%m-%d")
-    url = f"{BASE_URL}fixtures?date={today}"
+    url = f"{BASE_URL}/fixtures?date={today}"
 
     headers = {
-        "x-apisports-key": API_KEY
+        "x-apisports-key": API_KEY,
+        "x-rapidapi-host": "v3.football.api-sports.io"
     }
 
-    response = requests.get(url, headers=headers)
-    data = response.json()
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
 
-    matches = []
-    if "response" in data:
-        for m in data["response"]:
-            home = m["teams"]["home"]["name"]
-            away = m["teams"]["away"]["name"]
-            league = m["league"]["name"]
-            matches.append(f"{home} vs {away} ({league})")
+        matches = []
+        for match in data.get("response", []):
+            teams = match["teams"]
+            home = teams["home"]["name"]
+            away = teams["away"]["name"]
+            league = match["league"]["name"]
+            time = match["fixture"]["date"][11:16]  # sadece saat kısmı
+            matches.append(f"{time} — {home} vs {away} ({league})")
 
-    return matches
+        return matches
+    except Exception as e:
+        print("⚠️ Hata (API-Football):", e)
+        return []
