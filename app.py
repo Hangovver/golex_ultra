@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import sys, io, os
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
