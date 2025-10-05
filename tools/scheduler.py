@@ -6,7 +6,7 @@ def start_scheduler():
     scheduler = BackgroundScheduler(timezone="Europe/Istanbul")
 
     # Her gün saat 11:00'de çalışacak
-    scheduler.add_job(run_daily_analysis, "cron", hour=11, minute=0)
+    scheduler.add_job(run_daily_analysis, "cron", hour=8, minute=0)
 
     scheduler.start()
     print(f"⏰ Scheduler aktif: {datetime.datetime.now()} itibarıyla başlatıldı.")
