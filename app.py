@@ -1,29 +1,34 @@
 from fastapi import FastAPI
-from tools.daily_runner import run_daily_analysis
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+from tools.daily_runner import run_daily_analysis
 
-app = FastAPI(title="GOLEX Ultra Bot", version="2.0")
+app = FastAPI(title="GOLEX Ultra", version="1.0")
 
+# 🕒 Scheduler başlat
 scheduler = BackgroundScheduler()
 
 @app.on_event("startup")
-def startup_event():
+def start_scheduler():
+    print("⏰ Scheduler başlatılıyor...")
+    scheduler.add_job(run_daily_analysis, "interval", hours=24, id="daily_analysis", replace_existing=True)
+    scheduler.start()
+    print("✅ Scheduler aktif.")
+
+# 🧩 Manuel çalıştırma (Render’da test için)
+@app.get("/run")
+def run_now():
     try:
-        scheduler.add_job(run_daily_analysis, "cron", hour=8, minute=0)
-        scheduler.start()
-        print("✅ Scheduler başlatıldı.")
+        run_daily_analysis()
+        return {"status": "ok", "message": "Analiz başarıyla çalıştı."}
     except Exception as e:
-        print(f"⚠️ Scheduler başlatılamadı: {e}")
+        return {"status": "error", "message": str(e)}
 
-atexit.register(lambda: scheduler.shutdown(wait=False))
-
+# 🏠 Basit ana sayfa
 @app.get("/")
 def home():
-    return {"status": "GOLEX Bot çalışıyor 🚀"}
+    return {"message": "GOLEX Ultra aktif. /run endpoint'i ile testi başlatabilirsiniz."}
 
-@app.get("/run")
-def manual_run():
-    run_daily_analysis()
-    return {"status": "Manuel analiz gönderildi ✅"}
+# 🧹 Kapatılırken scheduler'ı temizle
+atexit.register(lambda: scheduler.shutdown(wait=False))
 
