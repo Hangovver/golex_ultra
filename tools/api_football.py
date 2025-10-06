@@ -1,52 +1,58 @@
 import requests
-import datetime
+from datetime import datetime
 import pytz
-import os
 
-# API anahtarını ortam değişkeninden al
-API_KEY = os.getenv("FOOTBALL_API_KEY")
+# ✅ API Anahtarını buraya gir
+API_KEY = "BURAYA_API_KEYİNİ_YAZ"
+BASE_URL = "https://v3.football.api-sports.io/fixtures"
 
-# API adresi ve başlıklar
-BASE_URL = "https://v3.football.api-sports.io"
-HEADERS = {"x-apisports-key": API_KEY}
-
-def get_today_matches(limit=30):
+def get_today_matches():
+    """
+    API-Football üzerinden bugünkü maçları çeker.
+    Türkiye saatine göre tarihi baz alır ve sonuçları listeler.
+    """
     try:
-        # Türkiye saatine göre "bugün" tarihini al
-        today = datetime.datetime.now(pytz.timezone("Europe/Istanbul")).strftime("%Y-%m-%d")
+        # Türkiye saat dilimi
+        tz = pytz.timezone("Europe/Istanbul")
+        today = datetime.now(tz).strftime("%Y-%m-%d")
 
-        url = f"{BASE_URL}/fixtures?date={today}"
-        response = requests.get(url, headers=HEADERS)
+        # API isteği
+        url = f"{BASE_URL}?date={today}"
+        headers = {"x-apisports-key": API_KEY}
 
-        # Eğer API yanıtı boşsa hata fırlat
+        print("=" * 60)
+        print(f"🕒 API Tarihi (Europe/Istanbul): {today}")
+        print(f"📡 API URL: {url}")
+
+        response = requests.get(url, headers=headers)
+        print(f"📬 Status Kodu: {response.status_code}")
+
         if response.status_code != 200:
-            return [f"Hata: API isteği başarısız ({response.status_code})"]
+            print(f"⚠️ API Hatası: {response.text}")
+            return []
 
         data = response.json()
-        matches = data.get("response", [])
 
-        if not matches:
-            return [f"Bugün ({today}) için maç bulunamadı."]
+        # JSON cevabının ilk 500 karakterini göster
+        print("✅ API cevabı (ilk 500 karakter):")
+        print(str(data)[:500])
 
-        match_list = []
-        for match in matches[:limit]:
-            league = match["league"]["name"]
-            home = match["teams"]["home"]["name"]
-            away = match["teams"]["away"]["name"]
-            time_utc = match["fixture"]["date"]
+        # Gelen response içinde maçları listele
+        matches = []
+        for item in data.get("response", []):
+            fixture = item.get("fixture", {})
+            league = item.get("league", {}).get("name", "Bilinmeyen Lig")
+            home = item.get("teams", {}).get("home", {}).get("name", "Ev Sahibi")
+            away = item.get("teams", {}).get("away", {}).get("name", "Deplasman")
+            time = fixture.get("date", "00:00")[11:16]
 
-            # Saati Türkiye saatine çevir
-            try:
-                utc_time = datetime.datetime.fromisoformat(time_utc.replace("Z", "+00:00"))
-                istanbul_time = utc_time.astimezone(pytz.timezone("Europe/Istanbul"))
-                time_str = istanbul_time.strftime("%H:%M")
-            except Exception:
-                time_str = "Bilinmiyor"
+            matches.append(f"{league}: {home} vs {away} ({time})")
 
-            # Maç bilgisini listeye ekle
-            match_list.append(f"{time_str} - {league}: {home} vs {away}")
+        print(f"🎯 Bulunan maç sayısı: {len(matches)}")
+        print("=" * 60)
 
-        return match_list
+        return matches
 
     except Exception as e:
-        return [f"Hata oluştu: {str(e)}"]
+        print(f"🚨 Genel hata: {e}")
+        return []
