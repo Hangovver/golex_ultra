@@ -25,3 +25,4 @@ def manual_run():
     return {"message": "Analiz başarıyla çalıştırıldı."}
 
 atexit.register(lambda: scheduler.shutdown(wait=False))
+
