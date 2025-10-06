@@ -15,3 +15,4 @@ def send_telegram_message(text):
         print(f"⚠️ Telegram gönderim hatası: {e}")
 
 
+
