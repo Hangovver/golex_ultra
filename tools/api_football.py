@@ -1,43 +1,46 @@
-import os
 import requests
-from datetime import datetime
+import datetime
+import os
+
+# API-Football ayarları
+API_KEY = os.getenv("API_FOOTBALL_KEY", "YOUR_API_KEY_HERE")  # Render Environment'da ekle
+BASE_URL = "https://v3.football.api-sports.io/fixtures"
+
+headers = {
+    "x-apisports-key": API_KEY
+}
 
 def get_today_matches():
-    """
-    Football-Data.org API'sinden bugünkü maçları çeker.
-    """
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    params = {"date": today, "timezone": "Europe/Istanbul"}
+    print(f"📅 Maçlar çekiliyor: {today}")
+
     try:
-        api_key = os.getenv("FOOTBALL_DATA_KEY")
-        if not api_key:
-            return ["API anahtarı bulunamadı. Lütfen FOOTBALL_DATA_KEY ortam değişkenini ekle."]
+        response = requests.get(BASE_URL, headers=headers, params=params, timeout=15)
+        response.encoding = "utf-8"
 
-        headers = {"X-Auth-Token": api_key}
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        url = f"https://api.football-data.org/v4/matches?dateFrom={today}&dateTo={today}"
-
-        response = requests.get(url, headers=headers, timeout=15)
         if response.status_code != 200:
-            return [f"API hatası ({response.status_code}): {response.text}"]
+            print(f"⚠️ API Hatası: {response.status_code}")
+            return []
 
         data = response.json()
-        matches = []
-
-        for match in data.get("matches", []):
-            home = match.get("homeTeam", {}).get("name", "Bilinmiyor")
-            away = match.get("awayTeam", {}).get("name", "Bilinmiyor")
-            competition = match.get("competition", {}).get("name", "")
-            status = match.get("status", "")
-            utc_date = match.get("utcDate", "")
-
-            match_str = f"{home} vs {away} ({competition}) [{status}]"
-            if utc_date:
-                match_str += f" - {utc_date[:16].replace('T', ' ')}"
-            matches.append(match_str)
+        matches = data.get("response", [])
 
         if not matches:
-            return ["Bugün için maç bulunamadı."]
+            print("⚠️ Bugün için maç verisi bulunamadı.")
+            return []
 
-        return matches
+        results = []
+        for match in matches:
+            home = match["teams"]["home"]["name"]
+            away = match["teams"]["away"]["name"]
+            league = match["league"]["name"]
+            hour = match["fixture"]["date"][11:16]
+            results.append(f"{league}: {home} vs {away} ({hour})")
+
+        print(f"✅ {len(results)} maç bulundu.")
+        return results
 
     except Exception as e:
-        return [f"⚠️ API hatası: {e}"]
+        print(f"⚠️ API isteği başarısız: {e}")
+        return []
