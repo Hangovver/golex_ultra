@@ -1,34 +1,22 @@
-import sys
-import os
-import io
-from datetime import datetime
 from .api_football import get_today_matches
 from .telegram import send_telegram_message
-
-# UTF-8 uyumluluğu
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="ignore")
+import datetime
 
 def run_daily_analysis():
+    today = datetime.date.today().strftime("%d %B %Y")
+    message = f"📊 GOLEX Günlük Analiz ({today})\n\n"
+    message += "⚽️ Bugünkü Maçlar:\n"
+
     try:
-        today = datetime.utcnow().strftime("%d %B %Y")
         matches = get_today_matches()
-
-        message = f"📊 GOLEX Günlük Analiz ({today})\n\n"
-
-        if not matches:
-            message += "⚽️ Bugünkü maçlar bulunamadı.\n"
+        if not matches or matches == ["Bugün için maç bulunamadı."]:
+            message += "• Bugün için maç bulunamadı 😅\n"
         else:
-            message += "⚽️ Bugünkü Maçlar ve Tahminler:\n"
-            for m in matches:
+            for m in matches[:30]:
                 safe_match = str(m).encode("utf-8", errors="ignore").decode("utf-8")
                 message += f"• {safe_match}\n"
-
-        message += "\n🔮 Tahminler son 5 maç istatistiklerine göre oluşturulmuştur."
-        send_telegram_message(message)
-
     except Exception as e:
-        err_msg = f"⚠️ Genel hata: {e}"
-        print(err_msg)
-        send_telegram_message(f"📊 GOLEX Günlük Analiz Hatası:\n{err_msg}")
+        message += f"⚠️ Hata oluştu: {e}\n"
 
-
+    message += "\n🔮 Tahminler istatistiklere göre sıralanacak."
+    send_telegram_message(message)
