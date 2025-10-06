@@ -1,43 +1,43 @@
-# -*- coding: utf-8 -*-
-"""
-TheSportsDB (public) fallback.
-Anahtar gerektirmez (test key = '1').
-Bugünün 'Soccer' maçlarını döndürür.
-"""
-from __future__ import annotations
-import os
 import requests
-from datetime import datetime, timezone
-from typing import List
+from datetime import datetime, timedelta
+import os
 
-def get_today_matches_thesportsdb(limit: int = 30) -> List[str]:
-    # Gün (UTC) — kaynak UTC döndüğü için sade tutuyoruz
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    api_key = os.getenv("THESPORTSDB_KEY", "1")  # test anahtarı
-    url = f"https://www.thesportsdb.com/api/v1/json/{api_key}/eventsday.php"
-    params = {"d": today, "s": "Soccer"}
+# Türkiye saatine göre bugünün tarihini al
+today = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
 
+def get_matches():
+    """
+    TheSportsDB üzerinden bugünkü maçları çeker.
+    """
     try:
-        r = requests.get(url, params=params, timeout=20)
-        r.raise_for_status()
-        data = r.json() or {}
-        events = data.get("events") or []
-        matches: List[str] = []
-        for e in events:
-            # Güvenli alan okuma
-            home = (e.get("strHomeTeam") or "").strip()
-            away = (e.get("strAwayTeam") or "").strip()
-            league = (e.get("strLeague") or "").strip()
-            tlocal = (e.get("strTimeLocal") or e.get("strTime") or "").strip()
-            if not home or not away:
-                # strEvent "TeamA vs TeamB" formatında olabilir
-                ev = (e.get("strEvent") or "").strip()
-                if " vs " in ev:
-                    home, away = [p.strip() for p in ev.split(" vs ", 1)]
-            if home and away:
-                label = f"{home} – {away}"
-                ext = " ".join(x for x in [f"({league})" if league else "", tlocal] if x).strip()
-                matches.append(f"{label} {ext}".strip())
-        return matches[:limit]
-    except Exception:
+        url = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={today}&s=Soccer"
+        print(f"📅 Maç verisi isteniyor: {url}")
+        response = requests.get(url, timeout=10)
+        data = response.json()
+
+        # Maç bulunamadıysa
+        if not data or not data.get("events"):
+            print("⚽️ Bugün için maç bulunamadı.")
+            return []
+
+        matches = []
+        for event in data["events"]:
+            home = event.get("strHomeTeam", "Bilinmiyor")
+            away = event.get("strAwayTeam", "Bilinmiyor")
+            league = event.get("strLeague", "Bilinmiyor")
+            time = event.get("strTime", "Saat Yok")
+            matches.append(f"{league}: {home} vs {away} ({time})")
+
+        return matches
+
+    except Exception as e:
+        print(f"❌ TheSportsDB bağlantı hatası: {e}")
         return []
+
+# Test amaçlı çalıştırmak istersen:
+if __name__ == "__main__":
+    matches = get_matches()
+    if matches:
+        print("\n".join(matches))
+    else:
+        print("Bugün için maç bulunamadı 😅")
