@@ -1,29 +1,29 @@
 from fastapi import FastAPI
-from apscheduler.schedulers.background import BackgroundScheduler
 from tools.daily_runner import run_daily_analysis
+from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
-app = FastAPI(title="Golex Ultra")
+app = FastAPI(title="GOLEX Ultra Bot", version="2.0")
 
 scheduler = BackgroundScheduler()
 
+@app.on_event("startup")
+def startup_event():
+    try:
+        scheduler.add_job(run_daily_analysis, "cron", hour=8, minute=0)
+        scheduler.start()
+        print("✅ Scheduler başlatıldı.")
+    except Exception as e:
+        print(f"⚠️ Scheduler başlatılamadı: {e}")
+
+atexit.register(lambda: scheduler.shutdown(wait=False))
+
 @app.get("/")
 def home():
-    return {"message": "Golex Ultra API aktif ✅"}
+    return {"status": "GOLEX Bot çalışıyor 🚀"}
 
 @app.get("/run")
 def manual_run():
     run_daily_analysis()
-    return {"message": "Analiz manuel olarak çalıştırıldı ✅"}
+    return {"status": "Manuel analiz gönderildi ✅"}
 
-def start_scheduler():
-    print("⏰ Scheduler başlatılıyor...")
-    scheduler.add_job(run_daily_analysis, "cron", hour=12, minute=0)  # her gün 12:00
-    scheduler.start()
-    print("✅ Scheduler aktif.")
-
-@app.on_event("startup")
-def startup_event():
-    start_scheduler()
-
-atexit.register(lambda: scheduler.shutdown())
