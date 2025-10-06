@@ -1,26 +1,17 @@
-import os
 import requests
+import os
 
-def send_telegram_message(message: str):
-    """
-    Telegram Bot API kullanarak mesaj gönderir.
-    """
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
+
+def send_telegram_message(text):
     try:
-        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
-        if not bot_token or not chat_id:
-            print("❌ Telegram ortam değişkenleri eksik.")
-            return
-
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        data = {"chat_id": chat_id, "text": message}
-        response = requests.post(url, data=data)
-
-        if response.status_code == 200:
-            print("✅ Telegram mesajı gönderildi.")
-        else:
-            print(f"⚠️ Telegram hatası: {response.text}")
-
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+        response = requests.post(url, json=payload, timeout=10)
+        print(f"✅ Telegram yanıtı: {response.text}")
+        return response.json()
     except Exception as e:
-        print(f"⚠️ Telegram hata: {e}")
+        print(f"⚠️ Telegram gönderim hatası: {e}")
+
+
