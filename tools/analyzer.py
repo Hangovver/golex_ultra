@@ -1,57 +1,45 @@
-# analyzer.py
+# tools/analyzer.py
 import requests
+import statistics
 from config import BASE_URL
-from statistics import mean
+import time
 
-# Takımın son maçlarını al
-def get_last_matches(team_id, count=5):
-    url = f"{BASE_URL}/eventslast.php?id={team_id}"
+# Ana analiz fonksiyonu
+def analyze_team_stats(team_id, mode="home_1.5"):
     try:
+        url = f"{BASE_URL}/eventslast.php?id={team_id}"
         r = requests.get(url, timeout=10)
         data = r.json().get("results", [])
-        return data[:count] if data else []
-    except Exception:
-        return []
+        if not data:
+            return False
 
-# Belirli tahmin türleri için oran hesaplama (yeni sürüm)
-def analyze_team_stats(team_id, mode):
-    matches = get_last_matches(team_id)
-    if not matches or len(matches) < 3:
-        return False  # Yetersiz veri
+        # Son 5 maç
+        recent = data[:5]
 
-    goals_scored = []
-    goals_conceded = []
+        # Gol istatistikleri
+        goals_scored = [int(m.get("intHomeScore") or 0) if m["idHomeTeam"] == team_id
+                        else int(m.get("intAwayScore") or 0) for m in recent]
 
-    for m in matches:
-        if not m.get("intHomeScore") or not m.get("intAwayScore"):
-            continue
-        if m["idHomeTeam"] == team_id:
-            goals_scored.append(int(m["intHomeScore"]))
-            goals_conceded.append(int(m["intAwayScore"]))
-        else:
-            goals_scored.append(int(m["intAwayScore"]))
-            goals_conceded.append(int(m["intHomeScore"]))
+        goals_conceded = [int(m.get("intAwayScore") or 0) if m["idHomeTeam"] == team_id
+                          else int(m.get("intHomeScore") or 0) for m in recent]
 
-    # En az 3 maç veri varsa analiz yap
-    if len(goals_scored) < 3:
+        avg_scored = statistics.mean(goals_scored)
+        avg_conceded = statistics.mean(goals_conceded)
+
+        # --- Tahmin kriterleri ---
+        if mode == "home_1.5":
+            return all(g >= 2 for g in goals_scored)
+        elif mode == "away_1.5":
+            return all(g >= 2 for g in goals_scored)
+        elif mode == "btts":
+            return all((a > 0 and b > 0) for a, b in zip(goals_scored, goals_conceded))
+        elif mode == "over_2.5":
+            return all((a + b) >= 3 for a, b in zip(goals_scored, goals_conceded))
+        elif mode == "btts_2.5":
+            return all((a > 0 and b > 0 and (a + b) >= 3) for a, b in zip(goals_scored, goals_conceded))
         return False
 
-    # Ortalama hesaplama
-    avg_scored = mean(goals_scored)
-    avg_total = mean([sum(x) for x in zip(goals_scored, goals_conceded)])
-
-    # 5 maçtan en az 3'ünde koşul sağlanıyorsa True
-    cond = lambda cond_list: sum(cond_list) >= 3
-
-    if mode == "home_1.5":
-        return cond([g >= 2 for g in goals_scored])
-    elif mode == "away_1.5":
-        return cond([g >= 2 for g in goals_scored])
-    elif mode == "btts":
-        return cond([a > 0 and b > 0 for a, b in zip(goals_scored, goals_conceded)])
-    elif mode == "over_2.5":
-        return cond([(a + b) > 2 for a, b in zip(goals_scored, goals_conceded)])
-    elif mode == "btts_2.5":
-        return cond([(a > 0 and b > 0 and (a + b) > 2) for a, b in zip(goals_scored, goals_conceded)])
-    else:
+    except Exception as e:
+        print(f"⚠️ Analiz hatası: {e}")
+        time.sleep(1)
         return False
