@@ -1,74 +1,82 @@
 # tools/alt_thesportsdb.py
-import requests
 import time
-from config import API_KEY, BASE_URL
-from tools.telegram import send_message
+import requests
+from functools import lru_cache
+from datetime import datetime
+from config import BASE_URL
 
-# Başlangıç ayarları
-MAX_MATCHES = 50        # ilk limit
-MIN_MATCHES = 10        # minimum limit
-RECOVERY_STEP = 5       # 1 saat sonra artış miktarı
-SLEEP_TIME = 10         # 429 hatasında bekleme süresi
-_last_limit_reduction = 0
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": "Golex/1.0"})
 
-def _get(endpoint, params=None):
-    """API isteği (adaptif limit kontrollü)"""
-    url = f"{BASE_URL}/{endpoint}"
-    headers = {"User-Agent": "Golex-Ultra/2.0"}
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        if r.status_code == 200:
-            time.sleep(1.2)
-            return r.json()
-        elif r.status_code == 429:
-            print(f"⚠️ Too many requests — {SLEEP_TIME} saniye bekleniyor...")
-            time.sleep(SLEEP_TIME)
-            return {"error": "rate_limit"}
-        else:
-            print(f"❌ API hatası: {r.status_code} - {r.text}")
-            return None
-    except Exception as e:
-        print(f"❌ API bağlantı hatası: {e}")
-        time.sleep(5)
-        return None
+def _get(path: str, params: dict, retry=True):
+    url = f"{BASE_URL}/{path}"
+    r = SESSION.get(url, params=params, timeout=20)
+    if r.status_code == 429:
+        if retry:
+            print("⚠️ Too many requests — 10 saniye bekleniyor...")
+            time.sleep(10)
+            return _get(path, params, retry=False)
+    r.raise_for_status()
+    return r.json() if r.text else {}
 
+def today_ymd():
+    # TheSportsDB 'eventsday' UTC kabul ediyor. Gerekirse +03 offseti burada verilir.
+    return datetime.utcnow().strftime("%Y-%m-%d")
 
-def get_team_id_by_name(team_name: str):
+@lru_cache(maxsize=512)
+def get_team_id_by_name(team_name: str) -> str | None:
     data = _get("searchteams.php", {"t": team_name})
-    if not data or not data.get("teams"):
-        print(f"⚠️ Takım bulunamadı: {team_name}")
+    teams = (data or {}).get("teams") or []
+    if not teams:
         return None
-    return data["teams"][0]["idTeam"]
+    return teams[0].get("idTeam")
 
-
-def get_last_5_matches(team_id: str):
-    data = _get("eventslast.php", {"id": team_id})
-    if not data or not data.get("results"):
-        return []
-    return data["results"][:5]
-
-
-def get_today_events():
-    """Bugünün maçlarını çeker, limit otomatik ayarlanır."""
-    global MAX_MATCHES, _last_limit_reduction
-    data = _get("eventsday.php", {"d": time.strftime("%Y-%m-%d")})
-    if not data or not data.get("events"):
-        print("⚠️ Bugün için maç bulunamadı.")
-        return []
-
-    events = data["events"][:MAX_MATCHES]
-    if data.get("error") == "rate_limit":
-        if MAX_MATCHES > MIN_MATCHES:
-            MAX_MATCHES = max(int(MAX_MATCHES * 0.8), MIN_MATCHES)
-            _last_limit_reduction = time.time()
-            send_message(f"⚠️ API limiti aşıldı, maç sayısı {MAX_MATCHES}’a düşürüldü.")
-            print(f"⚠️ Yeni limit: {MAX_MATCHES}")
-        return []
-
-    # Eğer 1 saat geçmişse limit artır
-    if _last_limit_reduction and (time.time() - _last_limit_reduction > 3600):
-        MAX_MATCHES = min(MAX_MATCHES + RECOVERY_STEP, 80)
-        send_message(f"✅ Limit toparlandı, maç sayısı {MAX_MATCHES}’a çıkarıldı.")
-        _last_limit_reduction = 0
-
+def get_today_events(limit=None) -> list[dict]:
+    data = _get("eventsday.php", {"d": today_ymd(), "s": "Soccer"})
+    events = (data or {}).get("events") or []
+    if limit is not None:
+        events = events[:limit]
     return events
+
+@lru_cache(maxsize=1024)
+def get_last_events(team_id: str) -> list[dict]:
+    # TheSportsDB: eventslast.php?id=TEAM_ID (genelde 5-10 maç döner)
+    data = _get("eventslast.php", {"id": team_id})
+    evts = (data or {}).get("results") or []
+    # En yeni üste gelebilir; genele karışmasın diye tarih/ID’ye göre sıralıyoruz
+    def keyf(e):
+        # sırala: dateEvent + idEvent
+        return ((e.get("dateEvent") or "1900-01-01"), str(e.get("idEvent") or "0"))
+    return sorted(evts, key=keyf, reverse=True)
+
+def is_home_event(evt: dict, team_name: str) -> bool:
+    return (evt.get("strHomeTeam") or "").strip().lower() == team_name.strip().lower()
+
+def is_away_event(evt: dict, team_name: str) -> bool:
+    return (evt.get("strAwayTeam") or "").strip().lower() == team_name.strip().lower()
+
+def goals(evt: dict) -> tuple[int,int] | None:
+    try:
+        hs = evt.get("intHomeScore")
+        as_ = evt.get("intAwayScore")
+        if hs is None or as_ is None:
+            return None
+        return int(hs), int(as_)
+    except Exception:
+        return None
+
+def last5_home(team_name: str) -> list[dict]:
+    tid = get_team_id_by_name(team_name)
+    if not tid:
+        return []
+    evts = get_last_events(tid)
+    only_home = [e for e in evts if is_home_event(e, team_name)]
+    return only_home[:5]
+
+def last5_away(team_name: str) -> list[dict]:
+    tid = get_team_id_by_name(team_name)
+    if not tid:
+        return []
+    evts = get_last_events(tid)
+    only_away = [e for e in evts if is_away_event(e, team_name)]
+    return only_away[:5]
