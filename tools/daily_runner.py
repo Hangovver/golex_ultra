@@ -1,115 +1,78 @@
-# daily_runner.py
-import requests
-from datetime import datetime
-from tools.predictor import analyze_match_strict
+from tools.alt_thesportsdb import get_last_5_matches, get_team_id_by_name
 
-# ================== AYARLAR ==================
-SPORT_API_KEY = "YOUR_SPORTAPI_KEY"  # api-sports.io veya sportdataapi key
-SPORT_API_HOST = "v3.football.api-sports.io"
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
-# ============================================
+def analyze_team(team_name):
+    """Bir takımın son 5 maçına göre gol analizleri"""
+    team_id = get_team_id_by_name(team_name)
+    if not team_id:
+        return None
 
-
-def send_telegram(msg: str):
-    """Telegram’a mesaj gönderir"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-    r = requests.post(url, json=payload)
-    print("Telegram yanıtı:", r.text)
-    return r
-
-
-def get_today_matches():
-    """Sport API'den bugünün maçlarını alır"""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    url = f"https://{SPORT_API_HOST}/fixtures?date={today}"
-    headers = {"x-apisports-key": SPORT_API_KEY}
-    r = requests.get(url, headers=headers)
-    data = r.json()
-    if "response" not in data or not data["response"]:
-        return []
-    return data["response"]
-
-
-def get_last5_matches(team_id: int, home: bool):
-    """Belirtilen takımın son 5 ev/deplasman maçını getirir"""
-    url = f"https://{SPORT_API_HOST}/fixtures?team={team_id}&last=10"
-    headers = {"x-apisports-key": SPORT_API_KEY}
-    r = requests.get(url, headers=headers)
-    data = r.json()
-    if "response" not in data:
-        return []
-
-    matches = []
-    for m in data["response"]:
-        if home and m["teams"]["home"]["id"] == team_id:
-            matches.append({
-                "home_goals": m["goals"]["home"],
-                "away_goals": m["goals"]["away"],
-            })
-        elif not home and m["teams"]["away"]["id"] == team_id:
-            matches.append({
-                "home_goals": m["goals"]["home"],
-                "away_goals": m["goals"]["away"],
-            })
-    return matches[:5]
-
-
-def get_injuries(team_id: int):
-    """Takımın as oyuncu sakatlıklarını getirir"""
-    url = f"https://{SPORT_API_HOST}/injuries?team={team_id}"
-    headers = {"x-apisports-key": SPORT_API_KEY}
-    r = requests.get(url, headers=headers)
-    data = r.json()
-    injuries = []
-    if "response" in data:
-        for p in data["response"]:
-            if p["player"]["name"] and p["player"]["type"] in ["Injury", "Suspended"]:
-                injuries.append(p["player"]["name"])
-    return injuries
-
-
-def run_daily_analysis():
-    matches = get_today_matches()
+    matches = get_last_5_matches(team_id)
     if not matches:
-        send_telegram("⚽️ Bugün maç bulunamadı 😅")
-        print("Bugün maç bulunamadı.")
-        return
+        return None
 
-    results = []
+    home_goals = []
+    away_goals = []
+    total_goals = []
+    both_scored = []
+
     for m in matches:
-        home_team = m["teams"]["home"]["name"]
-        away_team = m["teams"]["away"]["name"]
-        id_home = m["teams"]["home"]["id"]
-        id_away = m["teams"]["away"]["id"]
+        try:
+            h = int(m.get("intHomeScore", 0) or 0)
+            a = int(m.get("intAwayScore", 0) or 0)
+            home = m.get("strHomeTeam")
+            away = m.get("strAwayTeam")
 
-        # Maç verilerini çek
-        home_last5 = get_last5_matches(id_home, home=True)
-        away_last5 = get_last5_matches(id_away, home=False)
+            total_goals.append(h + a)
+            both_scored.append(h > 0 and a > 0)
 
-        # Sakat oyuncuları çek
-        home_injuries = get_injuries(id_home)
-        away_injuries = get_injuries(id_away)
+            if team_name.lower() in home.lower():
+                home_goals.append(h)
+            elif team_name.lower() in away.lower():
+                away_goals.append(a)
+        except:
+            continue
 
-        preds = analyze_match_strict(home_last5, away_last5, home_injuries, away_injuries)
+    avg_home = sum(home_goals) / len(home_goals) if home_goals else 0
+    avg_away = sum(away_goals) / len(away_goals) if away_goals else 0
+    avg_total = sum(total_goals) / len(total_goals) if total_goals else 0
+    kg_rate = both_scored.count(True) / len(both_scored) if both_scored else 0
 
-        if preds and "analiz dışı" not in preds[0]:
-            results.append(f"{home_team} - {away_team} → {', '.join(preds)}")
-        elif preds and "analiz dışı" in preds[0]:
-            results.append(f"{home_team} - {away_team} ⚠️ As oyuncu sakatlığı nedeniyle analiz dışı")
-        else:
-            results.append(f"{home_team} - {away_team} → (kriterleri sağlamıyor)")
+    return {
+        "team": team_name,
+        "ev_15_plus": avg_home >= 1.5,
+        "dep_15_plus": avg_away >= 1.5,
+        "ust_25": avg_total >= 2.5,
+        "kg": kg_rate >= 0.6,
+        "kg_ust_25": (kg_rate >= 0.6 and avg_total >= 2.5)
+    }
 
-    if not results:
-        send_telegram("📊 Bugün kriterlere uygun maç bulunamadı.")
-        print("Hiç uygun maç bulunamadı.")
-        return
+def analyze_match(home_team, away_team):
+    """İki takımı karşılaştırır ve olası tahminleri döner"""
+    home = analyze_team(home_team)
+    away = analyze_team(away_team)
 
-    msg = "📊 GOLEX Günlük Analiz\n\n" + "\n".join(results)
-    send_telegram(msg)
-    print(msg)
+    if not home or not away:
+        return None
 
+    result = {
+        "match": f"{home_team} vs {away_team}",
+        "ev_15_plus": home["ev_15_plus"],
+        "dep_15_plus": away["dep_15_plus"],
+        "ust_25": home["ust_25"] or away["ust_25"],
+        "kg": home["kg"] and away["kg"],
+        "kg_ust_25": home["kg_ust_25"] and away["kg_ust_25"]
+    }
+
+    return result
 
 if __name__ == "__main__":
-    run_daily_analysis()
+    matches = [
+        ("Manchester United", "Chelsea"),
+        ("Fenerbahce", "Galatasaray"),
+        ("Barcelona", "Real Madrid")
+    ]
+
+    for home, away in matches:
+        result = analyze_match(home, away)
+        if result:
+            print(result)
