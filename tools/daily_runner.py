@@ -1,109 +1,65 @@
 # tools/daily_runner.py
-import time
-from datetime import datetime, timedelta
-from config import (
-    INITIAL_EVENT_LIMIT, MIN_EVENT_LIMIT,
-    REDUCE_FACTOR, RECOVERY_AFTER_MIN, RECOVERY_GROWTH
-)
-from tools.alt_thesportsdb import get_today_events
-from tools.predictor import best_pick_for_match
-from tools.telegram import send_message_markdown
+import requests, time
+from datetime import date
+from config import BASE_URL
+from tools.analyzer import analyze_team_stats
+from tools.telegram import send_telegram_message
 
-# Dinamik limit (akıllı dengeleme)
-_current_limit = INITIAL_EVENT_LIMIT
-_last_reduce_ts = None
+LIMIT = 60  # Başlangıçta maksimum maç sayısı
+ADAPT_RATE = 0.8  # API limitine takılırsa %20 azalt
 
-def _reduce_limit():
-    global _current_limit, _last_reduce_ts
-    new_limit = max(MIN_EVENT_LIMIT, int(_current_limit * REDUCE_FACTOR))
-    if new_limit < _current_limit:
-        _current_limit = new_limit
-        _last_reduce_ts = datetime.utcnow()
-        print(f"⚠️ Limit düşürüldü → {_current_limit}")
-
-def _maybe_recover_limit():
-    global _current_limit, _last_reduce_ts
-    if not _last_reduce_ts:
-        return
-    if datetime.utcnow() - _last_reduce_ts >= timedelta(minutes=RECOVERY_AFTER_MIN):
-        new_limit = int(_current_limit * RECOVERY_GROWTH)
-        # tavanı çok zorlamayalım: INITIAL_EVENT_LIMIT’i aşmasın
-        if new_limit > INITIAL_EVENT_LIMIT:
-            new_limit = INITIAL_EVENT_LIMIT
-        if new_limit != _current_limit:
-            _current_limit = new_limit
-            print(f"🔄 Limit toparlandı → {_current_limit}")
-        # tekrar saymaya başla
-        _last_reduce_ts = datetime.utcnow()
-
-def _pick_to_emoji(pick: str | None) -> str:
-    return {
-        "KG + 2.5 ÜST": "🔥",
-        "Ev 1.5 ÜST": "🏠",
-        "Dep 1.5 ÜST": "🛫",
-        "2.5 ÜST": "⚽️",
-        "KG (Karşılıklı Gol)": "🔁",
-        None: "❌",
-    }.get(pick, "❌")
-
-def build_report(matches: list[tuple[str, dict]]) -> str:
-    day = datetime.utcnow().strftime("%d %B %Y")
-    lines = [f"📊 *GOLEX Günlük Analiz* ({day})", ""]
-    if not matches:
-        lines.append("Bugün uygun maç bulunamadı 😅")
-        return "\n".join(lines)
-
-    for pick, meta in matches:
-        home = meta["home"]; away = meta["away"]
-        emj = _pick_to_emoji(pick)
-        crit = meta["criteria"]
-        lines.append(
-            f"{emj} *{home} – {away}* → *{pick or '—'}*\n"
-            f"  • Örneklem: Ev({meta['samples']['home_last5_home']}), Dep({meta['samples']['away_last5_away']})\n"
-            f"  • [ev1.5:{'✓' if crit['ev_1_5'] else '✗'} | dep1.5:{'✓' if crit['dep_1_5'] else '✗'} | KG:{'✓' if crit['kg'] else '✗'} | 2.5:{'✓' if crit['o2_5'] else '✗'} | KG+2.5:{'✓' if crit['kg_o2_5'] else '✗'}]"
-        )
-    return "\n".join(lines)
-
-def run_daily_analysis() -> list[tuple[str, dict]]:
-    """
-    Günün maçlarını çeker, her maç için *tek* en uygun tahmini üretir.
-    Akıllı limit çalışır; 429 gelirse limit düşer.
-    """
-    global _current_limit
-    _maybe_recover_limit()
-
-    try:
-        events = get_today_events(limit=_current_limit)
-    except Exception as e:
-        # muhtemel 429 veya ağ
-        print(f"⚠️ Maç listesi alınamadı: {e}")
-        _reduce_limit()
-        events = []
-
-    results: list[tuple[str, dict]] = []
-
-    for ev in events:
-        home = (ev.get("strHomeTeam") or "").strip()
-        away = (ev.get("strAwayTeam") or "").strip()
-        if not home or not away:
-            continue
-
-        try:
-            pick, info = best_pick_for_match(home, away)
-            if pick:
-                results.append((pick, info))
-        except Exception as e:
-            # tek maç özelinde limit/429 vs olabilir
-            print(f"⚠️ Analiz hatası ({home}-{away}): {e}")
-            # çok art arda olursa global limiti düşürelim
-            _reduce_limit()
-            # ufak bir bekleme
-            time.sleep(1)
-
-    return results
+def get_today_matches():
+    today = date.today().isoformat()
+    url = f"{BASE_URL}/eventsday.php?d={today}&s=Soccer"
+    r = requests.get(url, timeout=10)
+    data = r.json().get("events", [])
+    return data or []
 
 def run_and_notify():
-    print("⚡ Günlük analiz başlatıldı...")
-    matches = run_daily_analysis()
-    report = build_report(matches)
-    send_message_markdown(report)
+    global LIMIT
+    print("⚡ Manuel analiz başlatıldı...")
+    send_telegram_message("⚡ Günlük analiz başlatıldı...")
+
+    try:
+        matches = get_today_matches()
+    except Exception as e:
+        print(f"⚠️ Maç listesi alınamadı: {e}")
+        send_telegram_message(f"⚠️ Maç listesi alınamadı: {e}")
+        return
+
+    results = []
+    for i, m in enumerate(matches[:LIMIT]):
+        home_id, away_id = m.get("idHomeTeam"), m.get("idAwayTeam")
+        if not home_id or not away_id:
+            continue
+
+        time.sleep(0.5)
+
+        # Tahmin sırası — uygun olan ilkini seç
+        predictions = {
+            "🏠 Ev 1.5 Üst": analyze_team_stats(home_id, "home_1.5"),
+            "🚗 Dep 1.5 Üst": analyze_team_stats(away_id, "away_1.5"),
+            "⚽ KG Var": analyze_team_stats(home_id, "btts"),
+            "🔥 2.5 Üst": analyze_team_stats(home_id, "over_2.5"),
+            "💥 KG + 2.5": analyze_team_stats(home_id, "btts_2.5"),
+        }
+
+        for label, ok in predictions.items():
+            if ok:
+                results.append(f"{m['strEvent']} → {label}")
+                break
+
+    # Eğer sonuç yoksa
+    if not results:
+        send_telegram_message(f"📊 GOLEX Günlük Analiz ({date.today().strftime('%d %B %Y')})\n\nBugün uygun maç bulunamadı 😅")
+    else:
+        text = f"📊 <b>GOLEX Günlük Analiz ({date.today().strftime('%d %B %Y')})</b>\n\n" + "\n".join(results)
+        send_telegram_message(text)
+
+    print("✅ Analiz tamamlandı, Telegram’a gönderildi.")
+
+# Limit düşürme mantığı (AI Adaptation)
+def handle_api_error():
+    global LIMIT
+    LIMIT = int(LIMIT * ADAPT_RATE)
+    print(f"⚠️ Limit düşürüldü → {LIMIT}")
