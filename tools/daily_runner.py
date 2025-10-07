@@ -1,114 +1,115 @@
-# -*- coding: utf-8 -*-
-from __future__ import annotations
-import os
-from datetime import datetime, timezone
-from typing import List
-
+# daily_runner.py
 import requests
+from datetime import datetime
+from tools.predictor import analyze_match_strict
 
-# TELEGRAM göndericiyi projendeki adıyla bırakıyorum
-# (sende tools/telegram.py var diye varsayıyorum)
-from .telegram import send_telegram_message  # noqa: F401
+# ================== AYARLAR ==================
+SPORT_API_KEY = "YOUR_SPORTAPI_KEY"  # api-sports.io veya sportdataapi key
+SPORT_API_HOST = "v3.football.api-sports.io"
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
+# ============================================
 
-# Mevcut API-FOOTBALL çekicin varsa kalsın; yoksa try/except ile atlarız
-def _get_from_api_football(limit: int = 30) -> List[str]:
-    api_key = os.getenv("API_FOOTBALL_KEY") or os.getenv("X_RAPIDAPI_KEY")
-    if not api_key:
-        return []
-    try:
-        # RapidAPI host/endpoint (v3). Varsa kendi fonksiyonunu da çağırabilirsin.
-        url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        params = {"date": today, "timezone": "UTC"}
-        headers = {
-            "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
-            "x-rapidapi-key": api_key,
-        }
-        r = requests.get(url, params=params, headers=headers, timeout=25)
-        if r.status_code != 200:
-            return []
-        j = r.json() or {}
-        res = j.get("response") or []
-        out: List[str] = []
-        for it in res:
-            teams = it.get("teams") or {}
-            home = ((teams.get("home") or {}).get("name") or "").strip()
-            away = ((teams.get("away") or {}).get("name") or "").strip()
-            league = ((it.get("league") or {}).get("name") or "").strip()
-            time_utc = ((it.get("fixture") or {}).get("date") or "").strip()
-            label = f"{home} – {away}".strip(" –")
-            extra = f"({league})" if league else ""
-            piece = " ".join(x for x in [label, extra] if x).strip()
-            if time_utc:
-                piece += f" {time_utc}"
-            if label:
-                out.append(piece)
-        return out[:limit]
-    except Exception:
-        return []
 
-# Football-Data.org (token varsa) – ücretsiz ve hızlı
-def _get_from_footballdata(limit: int = 30) -> List[str]:
-    token = os.getenv("FOOTBALL_DATA_TOKEN")
-    if not token:
+def send_telegram(msg: str):
+    """Telegram’a mesaj gönderir"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+    r = requests.post(url, json=payload)
+    print("Telegram yanıtı:", r.text)
+    return r
+
+
+def get_today_matches():
+    """Sport API'den bugünün maçlarını alır"""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    url = f"https://{SPORT_API_HOST}/fixtures?date={today}"
+    headers = {"x-apisports-key": SPORT_API_KEY}
+    r = requests.get(url, headers=headers)
+    data = r.json()
+    if "response" not in data or not data["response"]:
         return []
-    try:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        url = f"https://api.football-data.org/v4/matches"
-        params = {"dateFrom": today, "dateTo": today}
-        headers = {"X-Auth-Token": token}
-        r = requests.get(url, params=params, headers=headers, timeout=20)
-        if r.status_code != 200:
-            return []
-        j = r.json() or {}
-        matches = j.get("matches") or []
-        out: List[str] = []
-        for m in matches:
-            comp = ((m.get("competition") or {}).get("name") or "").strip()
-            home = ((m.get("homeTeam") or {}).get("name") or "").strip()
-            away = ((m.get("awayTeam") or {}).get("name") or "").strip()
-            label = f"{home} – {away}".strip(" –")
-            extra = f"({comp})" if comp else ""
-            piece = " ".join(x for x in [label, extra] if x).strip()
-            if label:
-                out.append(piece)
-        return out[:limit]
-    except Exception:
+    return data["response"]
+
+
+def get_last5_matches(team_id: int, home: bool):
+    """Belirtilen takımın son 5 ev/deplasman maçını getirir"""
+    url = f"https://{SPORT_API_HOST}/fixtures?team={team_id}&last=10"
+    headers = {"x-apisports-key": SPORT_API_KEY}
+    r = requests.get(url, headers=headers)
+    data = r.json()
+    if "response" not in data:
         return []
 
-# TheSportsDB (public) – anahtarsız fallback
-from .alt_thesportsdb import get_today_matches_thesportsdb  # noqa: E402
+    matches = []
+    for m in data["response"]:
+        if home and m["teams"]["home"]["id"] == team_id:
+            matches.append({
+                "home_goals": m["goals"]["home"],
+                "away_goals": m["goals"]["away"],
+            })
+        elif not home and m["teams"]["away"]["id"] == team_id:
+            matches.append({
+                "home_goals": m["goals"]["home"],
+                "away_goals": m["goals"]["away"],
+            })
+    return matches[:5]
 
-def run_daily_analysis(max_matches: int = 30) -> str:
-    # Başlık
-    today_human = datetime.now(timezone.utc).strftime("%d %B %Y")
-    message = f"📊 GOLEX Günlük Analiz ({today_human})\n\n"
-    message += "⚽️ Bugünkü Maçlar:\n"
 
-    # 1) API-FOOTBALL (varsa)  2) Football-Data (varsa)  3) TheSportsDB (public)
-    matches: List[str] = []
-    for getter in (_get_from_api_football, _get_from_footballdata, get_today_matches_thesportsdb):
-        try:
-            matches = getter(max_matches)
-            if matches:
-                break
-        except Exception:
-            continue
+def get_injuries(team_id: int):
+    """Takımın as oyuncu sakatlıklarını getirir"""
+    url = f"https://{SPORT_API_HOST}/injuries?team={team_id}"
+    headers = {"x-apisports-key": SPORT_API_KEY}
+    r = requests.get(url, headers=headers)
+    data = r.json()
+    injuries = []
+    if "response" in data:
+        for p in data["response"]:
+            if p["player"]["name"] and p["player"]["type"] in ["Injury", "Suspended"]:
+                injuries.append(p["player"]["name"])
+    return injuries
 
+
+def run_daily_analysis():
+    matches = get_today_matches()
     if not matches:
-        message += "Bugün maç bulunamadı 😅\n"
-    else:
-        # UTF-8 güvenli liste
-        for m in matches[:max_matches]:
-            safe = str(m).encode("utf-8", errors="ignore").decode("utf-8").strip()
-            if safe:
-                message += f"• {safe}\n"
+        send_telegram("⚽️ Bugün maç bulunamadı 😅")
+        print("Bugün maç bulunamadı.")
+        return
 
-    message += "🔮 Tahminler istatistiklere göre sıralanacak."
-    # Telegram’a gönder
-    try:
-        send_telegram_message(message)
-    except Exception:
-        pass
-    return message
+    results = []
+    for m in matches:
+        home_team = m["teams"]["home"]["name"]
+        away_team = m["teams"]["away"]["name"]
+        id_home = m["teams"]["home"]["id"]
+        id_away = m["teams"]["away"]["id"]
 
+        # Maç verilerini çek
+        home_last5 = get_last5_matches(id_home, home=True)
+        away_last5 = get_last5_matches(id_away, home=False)
+
+        # Sakat oyuncuları çek
+        home_injuries = get_injuries(id_home)
+        away_injuries = get_injuries(id_away)
+
+        preds = analyze_match_strict(home_last5, away_last5, home_injuries, away_injuries)
+
+        if preds and "analiz dışı" not in preds[0]:
+            results.append(f"{home_team} - {away_team} → {', '.join(preds)}")
+        elif preds and "analiz dışı" in preds[0]:
+            results.append(f"{home_team} - {away_team} ⚠️ As oyuncu sakatlığı nedeniyle analiz dışı")
+        else:
+            results.append(f"{home_team} - {away_team} → (kriterleri sağlamıyor)")
+
+    if not results:
+        send_telegram("📊 Bugün kriterlere uygun maç bulunamadı.")
+        print("Hiç uygun maç bulunamadı.")
+        return
+
+    msg = "📊 GOLEX Günlük Analiz\n\n" + "\n".join(results)
+    send_telegram(msg)
+    print(msg)
+
+
+if __name__ == "__main__":
+    run_daily_analysis()
