@@ -1,7 +1,8 @@
-from tools.alt_thesportsdb import get_last_5_matches, get_team_id_by_name
+import os
+from tools.alt_thesportsdb import get_today_events, get_team_id_by_name, get_last_5_matches
+from tools.telegram import send_telegram_message
 
-def analyze_team(team_name):
-    """Bir takımın son 5 maçına göre gol analizleri"""
+def analyze_team(team_name: str):
     team_id = get_team_id_by_name(team_name)
     if not team_id:
         return None
@@ -10,69 +11,89 @@ def analyze_team(team_name):
     if not matches:
         return None
 
-    home_goals = []
-    away_goals = []
-    total_goals = []
-    both_scored = []
+    team_goals_each, opp_goals_each, totals_each, kg_each = [], [], [], []
 
     for m in matches:
         try:
             h = int(m.get("intHomeScore", 0) or 0)
             a = int(m.get("intAwayScore", 0) or 0)
-            home = m.get("strHomeTeam")
-            away = m.get("strAwayTeam")
+            home = (m.get("strHomeTeam") or "").lower()
+            away = (m.get("strAwayTeam") or "").lower()
+            t = team_name.lower()
 
-            total_goals.append(h + a)
-            both_scored.append(h > 0 and a > 0)
+            if t in home:
+                g_for, g_opp = h, a
+            elif t in away:
+                g_for, g_opp = a, h
+            else:
+                continue
 
-            if team_name.lower() in home.lower():
-                home_goals.append(h)
-            elif team_name.lower() in away.lower():
-                away_goals.append(a)
-        except:
+            team_goals_each.append(g_for)
+            opp_goals_each.append(g_opp)
+            totals_each.append(h + a)
+            kg_each.append(h > 0 and a > 0)
+        except Exception:
             continue
 
-    avg_home = sum(home_goals) / len(home_goals) if home_goals else 0
-    avg_away = sum(away_goals) / len(away_goals) if away_goals else 0
-    avg_total = sum(total_goals) / len(total_goals) if total_goals else 0
-    kg_rate = both_scored.count(True) / len(both_scored) if both_scored else 0
+    if not team_goals_each:
+        return None
+
+    every_match_2plus = all(g >= 2 for g in team_goals_each)
+    kg_all_5 = all(kg_each)
+    over25_all_5 = all(t >= 3 for t in totals_each)
 
     return {
         "team": team_name,
-        "ev_15_plus": avg_home >= 1.5,
-        "dep_15_plus": avg_away >= 1.5,
-        "ust_25": avg_total >= 2.5,
-        "kg": kg_rate >= 0.6,
-        "kg_ust_25": (kg_rate >= 0.6 and avg_total >= 2.5)
+        "every_2plus": every_match_2plus,
+        "kg_all_5": kg_all_5,
+        "over25_all_5": over25_all_5,
+        "avg_for": sum(team_goals_each) / len(team_goals_each),
+        "avg_total": sum(totals_each) / len(totals_each),
     }
 
-def analyze_match(home_team, away_team):
-    """İki takımı karşılaştırır ve olası tahminleri döner"""
-    home = analyze_team(home_team)
-    away = analyze_team(away_team)
-
-    if not home or not away:
+def analyze_match(home, away):
+    h = analyze_team(home)
+    a = analyze_team(away)
+    if not h or not a:
         return None
 
-    result = {
-        "match": f"{home_team} vs {away_team}",
-        "ev_15_plus": home["ev_15_plus"],
-        "dep_15_plus": away["dep_15_plus"],
-        "ust_25": home["ust_25"] or away["ust_25"],
-        "kg": home["kg"] and away["kg"],
-        "kg_ust_25": home["kg_ust_25"] and away["kg_ust_25"]
+    ev15 = h["every_2plus"]
+    dep15 = a["every_2plus"]
+    kg = h["kg_all_5"] and a["kg_all_5"]
+    ust25 = h["over25_all_5"] and a["over25_all_5"]
+    kgust = kg and ust25
+
+    return {
+        "match": f"{home} vs {away}",
+        "EV 1.5+": ev15,
+        "DEP 1.5+": dep15,
+        "KG": kg,
+        "ÜST 2.5": ust25,
+        "KG+ÜST": kgust,
+        "home_avg": round(h["avg_for"], 2),
+        "away_avg": round(a["avg_for"], 2),
     }
 
-    return result
+def run_and_notify():
+    events = get_today_events()
+    if not events:
+        send_telegram_message("⚽️ Bugün maç bulunamadı.")
+        return
 
-if __name__ == "__main__":
-    matches = [
-        ("Manchester United", "Chelsea"),
-        ("Fenerbahce", "Galatasaray"),
-        ("Barcelona", "Real Madrid")
-    ]
+    lines = ["📊 *GOLEX Günlük Analiz*"]
+    for e in events:
+        home, away = e.get("strHomeTeam"), e.get("strAwayTeam")
+        if not home or not away:
+            continue
+        r = analyze_match(home, away)
+        if not r:
+            continue
+        tick = lambda x: "✅" if x else "❌"
+        lines.append(
+            f"\n*{r['match']}*\n"
+            f"EV 1.5+: {tick(r['EV 1.5+'])} | DEP 1.5+: {tick(r['DEP 1.5+'])}\n"
+            f"KG: {tick(r['KG'])} | ÜST 2.5: {tick(r['ÜST 2.5'])} | KG+ÜST: {tick(r['KG+ÜST'])}\n"
+            f"_(Ev Ort: {r['home_avg']}  Dep Ort: {r['away_avg']})_"
+        )
 
-    for home, away in matches:
-        result = analyze_match(home, away)
-        if result:
-            print(result)
+    send_telegram_message("\n".join(lines))
