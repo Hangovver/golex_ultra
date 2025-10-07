@@ -2,20 +2,21 @@ import requests
 import time
 from datetime import date
 
-API_KEY = "099583"  # Örn: "099583"
+# 🔑 Premium API anahtarını buraya yaz:
+API_KEY = "099583"  # senin premium anahtarın
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
 def _get(endpoint, params=None):
-    """Genel GET isteği (otomatik tekrar ve limit koruması içerir)"""
+    """Genel GET isteği (limit korumalı ve otomatik tekrar içerir)"""
     url = f"{BASE_URL}/{endpoint}"
     try:
         r = requests.get(url, params=params)
         if r.status_code == 429:
-            print("⚠️ Too many requests (429) — 3 saniye bekleniyor...")
-            time.sleep(3)
+            print("⚠️ Too many requests — 10 saniye bekleniyor...")
+            time.sleep(10)
             return _get(endpoint, params)
         r.raise_for_status()
-        time.sleep(0.5)  # API limitini aşmamak için ufak gecikme
+        time.sleep(1.0)  # Her istek arası 1 saniye bekle
         return r.json()
     except requests.exceptions.RequestException as e:
         print(f"🚨 API hatası: {e}")
