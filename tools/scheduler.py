@@ -1,28 +1,16 @@
 # tools/scheduler.py
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime
-from config import RUN_HOUR
 from tools.daily_runner import run_and_notify
 
-scheduler: BackgroundScheduler | None = None
+scheduler = BackgroundScheduler()
 
 def start_scheduler():
-    global scheduler
-    if scheduler:
-        return scheduler
-    print("⏰ Zamanlayıcı başlatılıyor...")
-    scheduler = BackgroundScheduler(timezone="UTC")
-    # RUN_HOUR yerel 10:00 ise UTC’de saat farkı olabilir;
-    # Render genelde UTC çalışır. Basit tutuyoruz:
-    scheduler.add_job(run_and_notify, CronTrigger(hour=RUN_HOUR, minute=0))
-    scheduler.start()
-    print(f"✅ Günlük analiz planlandı ({RUN_HOUR:02d}:00)")
-    return scheduler
+    try:
+        scheduler.add_job(run_and_notify, "cron", hour=10, minute=0, id="daily_task")
+        scheduler.start()
+        print("✅ Günlük analiz planlandı (10:00)")
+    except Exception as e:
+        print(f"⚠️ Zamanlayıcı hatası: {e}")
 
 def stop_scheduler():
-    global scheduler
-    if scheduler and scheduler.running:
-        scheduler.shutdown(wait=False)
-        print("🛑 Zamanlayıcı durduruldu.")
-    scheduler = None
+    scheduler.shutdown(wait=False)
