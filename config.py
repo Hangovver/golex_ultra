@@ -7,7 +7,7 @@ BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
 # — Telegram —
 TELEGRAM_TOKEN = "8227478980:AAGF1g0PHGp6j85SG8qPyyP9hYjgfJcWyRU"
-CHAT_ID = "<BURAYA_CHAT_ID>"   # kullanıcı ya da grup ID
+CHAT_ID = "<5876994093>"   # kullanıcı ya da grup ID
 
 # — Zamanlama —
 RUN_HOUR = 10                  # Her gün saat 10:00
