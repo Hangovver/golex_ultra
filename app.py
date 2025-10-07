@@ -1,35 +1,34 @@
 # app.py
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse
 from tools.scheduler import start_scheduler, stop_scheduler
 from tools.daily_runner import run_and_notify
-import threading
 
-app = FastAPI(title="Golex Ultra", version="2.0 Stable AI")
+app = FastAPI(title="GOLEX Ultra")
 
-@app.get("/")
-def home():
-    return JSONResponse({
-        "status": "✅ Running",
-        "message": "Golex Ultra (AI Limit Adaptation) aktif",
-        "manual_run": "/run"
-    })
+@app.get("/", response_class=PlainTextResponse)
+def root():
+    return "GOLEX Ultra çalışıyor. /run ile manuel tetikleyebilirsin."
 
-@app.get("/run")
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "ok"
+
+@app.get("/run", response_class=PlainTextResponse)
 def run_now():
-    try:
-        threading.Thread(target=run_and_notify, daemon=True).start()
-        return {"message": "⚡ Manuel analiz başlatıldı (arka planda)"}
-    except Exception as e:
-        return {"error": str(e)}
+    print("⚡ Manuel analiz başlatıldı...")
+    run_and_notify()
+    return "Manuel analiz çalıştı ve (varsa) Telegram'a gönderildi."
 
+# FastAPI lifespan olayları (on_event deprecation warning’lerini görmezden gelebilirsin)
 @app.on_event("startup")
-def startup_event():
-    print("🚀 Golex Ultra başlatılıyor...")
+def _startup():
     start_scheduler()
-    print("✅ Planlayıcı aktif (10:00)")
 
 @app.on_event("shutdown")
-def shutdown_event():
-    print("🛑 Uygulama kapatılıyor...")
+def _shutdown():
     stop_scheduler()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=10000)
