@@ -1,30 +1,38 @@
 from fastapi import FastAPI
-import uvicorn
 from tools.scheduler import start_scheduler, stop_scheduler
 from tools.daily_runner import run_and_notify
+import uvicorn
 
-app = FastAPI()
+app = FastAPI(title="Golex Ultra", version="2.0", description="Otomatik maç analizi ve Telegram bildirimi sistemi ⚽")
 
 @app.on_event("startup")
 def startup_event():
-    print("⏰ Scheduler başlatılıyor...")
+    """Render başlatıldığında zamanlayıcıyı başlatır"""
+    print("🚀 Uygulama başlatılıyor...")
     start_scheduler()
+    print("✅ Zamanlayıcı aktif (her sabah 10:00)")
 
 @app.on_event("shutdown")
 def shutdown_event():
-    print("🛑 Scheduler durduruluyor...")
+    """Render kapandığında zamanlayıcıyı durdurur"""
+    print("🛑 Uygulama kapanıyor, zamanlayıcı durduruluyor...")
     stop_scheduler()
 
 @app.get("/")
 def home():
-    return {"status": "running", "message": "GOLEX Football Analyzer aktif ✅"}
+    """Durum kontrolü için basit endpoint"""
+    return {
+        "status": "running ✅",
+        "message": "Golex Ultra aktif ve analiz planlandı ⚽",
+        "manual_run": "/run"
+    }
 
 @app.get("/run")
 def run_now():
+    """Manuel analiz tetikleme endpoint’i"""
     print("⚡ Manuel analiz başlatıldı...")
     run_and_notify()
-    return {"status": "ok", "message": "Analiz çalıştırıldı."}
+    return {"message": "📊 Manuel analiz tamamlandı ve Telegram’a gönderildi ✅"}
 
-# Render otomatik olarak gunicorn ile calistirmazsa
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    uvicorn.run("app:app", host="0.0.0.0", port=10000)
