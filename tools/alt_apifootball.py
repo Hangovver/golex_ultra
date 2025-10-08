@@ -1,50 +1,77 @@
 # tools/alt_apifootball.py
+import os
 import requests
-from datetime import datetime
-from functools import lru_cache
-from config import BASE_URL_FOOTBALL, API_FOOTBALL_KEY
+from datetime import date
 
-HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
+API_KEY = os.getenv("API_FOOTBALL_KEY")
+BASE_URL = "https://v3.football.api-sports.io"
 
+HEADERS = {"x-apisports-key": API_KEY}
 
-def _get(endpoint: str, params: dict = None):
-    url = f"{BASE_URL_FOOTBALL}/{endpoint}"
-    r = requests.get(url, params=params or {}, headers=HEADERS, timeout=20)
-    if r.status_code != 200:
-        raise RuntimeError(f"API error {r.status_code}: {r.text[:200]}")
-    return r.json().get("response", [])
-
-
-def get_today_events(limit=None):
-    """Bugünkü maçları (fixture) getirir"""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    data = _get("fixtures", {"date": today})
-    if limit:
-        data = data[:limit]
+# --- GÜNÜN MAÇLARI ---
+def get_today_events():
+    """Bugünün tüm futbol maçlarını döndürür"""
+    today = date.today().isoformat()
+    url = f"{BASE_URL}/fixtures"
+    params = {"date": today}
+    r = requests.get(url, headers=HEADERS, params=params, timeout=20)
+    r.raise_for_status()
+    data = r.json().get("response", [])
     return data
 
+# --- TAKIM ID AL ---
+def get_team_id(team_name):
+    """Takım adından API-Football ID'sini bulur"""
+    url = f"{BASE_URL}/teams"
+    params = {"search": team_name}
+    r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+    r.raise_for_status()
+    res = r.json().get("response", [])
+    if not res:
+        raise ValueError(f"Takım bulunamadı: {team_name}")
+    return res[0]["team"]["id"]
 
-@lru_cache(maxsize=512)
-def get_last_events(team_id: int, limit=5):
-    """Bir takımın son maçlarını getirir"""
-    data = _get("fixtures", {"team": team_id, "last": limit})
-    return data
+# --- SON 5 MAÇ ---
+def get_last_matches(team_name, side=None):
+    """
+    Takımın son 5 maçını döndürür.
+    side: 'home' veya 'away' -> filtre
+    """
+    team_id = get_team_id(team_name)
+    url = f"{BASE_URL}/fixtures"
+    params = {"team": team_id, "last": 10}  # 10 çek, biz 5 alırız
+    r = requests.get(url, headers=HEADERS, params=params, timeout=20)
+    r.raise_for_status()
+    matches = r.json().get("response", [])
 
+    result = []
+    for m in matches:
+        fixture = m.get("fixture", {})
+        home = m["teams"]["home"]["name"]
+        away = m["teams"]["away"]["name"]
+        goals_home = m["goals"]["home"]
+        goals_away = m["goals"]["away"]
 
-def goals(evt: dict):
-    """Maç skorunu (ev, dep) döndürür"""
-    try:
-        goals = evt.get("goals") or {}
-        return goals.get("home"), goals.get("away")
-    except Exception:
-        return None
+        # ev/deplasman filtresi
+        if side == "home" and m["teams"]["home"]["id"] != team_id:
+            continue
+        if side == "away" and m["teams"]["away"]["id"] != team_id:
+            continue
 
+        result.append({
+            "date": fixture.get("date"),
+            "homeTeam": home,
+            "awayTeam": away,
+            "homeGoals": goals_home,
+            "awayGoals": goals_away,
+        })
+        if len(result) >= 5:
+            break
 
-def team_id_from_event(evt: dict):
-    """Fixture içinden ev ve deplasman ID’lerini döndürür"""
-    try:
-        home = evt["teams"]["home"]
-        away = evt["teams"]["away"]
-        return home.get("id"), away.get("id")
-    except Exception:
-        return None, None
+    return result
+
+# --- TEST ---
+if __name__ == "__main__":
+    print("Test Real Madrid son 5 ev maçı:")
+    for m in get_last_matches("Real Madrid", "home"):
+        print(f"{m['homeTeam']} {m['homeGoals']} - {m['awayGoals']} {m['awayTeam']}")
