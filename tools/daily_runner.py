@@ -1,13 +1,16 @@
 # tools/daily_runner.py
 import time
+import requests
 from datetime import date
-from tools.alt_apifootball import get_today_events
-from tools.predictor import best_pick_for_match
+from config import BASE_URL, HEADERS
 from tools.telegram import send_telegram_message
+from tools.predictor import best_pick_for_match
+from tools.alt_apifootball import get_today_events
 
 LIMIT = 60
 ADAPT_RATE = 0.8
 MIN_LIMIT = 10
+
 
 def handle_api_error():
     global LIMIT
@@ -16,40 +19,26 @@ def handle_api_error():
         LIMIT = new_limit
         print(f"⚠️ Limit düşürüldü → {LIMIT}")
 
+
 def run_and_notify():
+    """Günlük maç analizini çalıştırır ve Telegram’a gönderir."""
     global LIMIT
-    print("⚡ Günlük analiz başlatıldı...")
+    print("⚡ Manuel analiz başlatıldı...")
     send_telegram_message("⚡ Günlük analiz başlatıldı...")
 
+    # Maç listesini çek
     try:
         matches = get_today_events()
     except Exception as e:
-        send_telegram_message(f"⚠️ Maç listesi alınamadı: {e}")
+        print(f"⚠️ Maç listesi alınamadı: {e}")
         handle_api_error()
+        send_telegram_message(f"⚠️ Maç listesi alınamadı: {e}")
         return
 
     results = []
-    for m in matches[:LIMIT]:
-        try:
-            home = m["teams"]["home"]["name"]
-            away = m["teams"]["away"]["name"]
-            print(f"🔍 {home} vs {away}")
+    for i, m in enumerate(matches[:LIMIT]):
+        home_team = m.get("home_team")
+        away_team = m.get("away_team")
 
-            pick, info = best_pick_for_match(home, away)
-            line = f"{home} – {away} → {pick}\n  • Örneklem: Ev({info['samples']['Ev']}), Dep({info['samples']['Dep']})\n"
-            line += "  • " + " | ".join([f"{k}:{'✓' if v else '✗'}" for k, v in info["criteria"].items()])
-            results.append(line)
-
-            time.sleep(1)
-
-        except Exception as e:
-            print(f"⚠️ Analiz hatası ({m}): {e}")
-            handle_api_error()
-            time.sleep(2)
-
-    if not results:
-        send_telegram_message(f"📊 <b>GOLEX Günlük Analiz ({date.today():%d %B %Y})</b>\n\nBugün uygun maç bulunamadı 😅")
-    else:
-        send_telegram_message(f"📊 <b>GOLEX Günlük Analiz ({date.today():%d %B %Y})</b>\n\n" + "\n".join(results))
-
-    print("✅ Analiz tamamlandı.")
+        if not home_team or not away_team:
+           
