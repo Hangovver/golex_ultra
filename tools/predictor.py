@@ -1,91 +1,56 @@
 # tools/predictor.py
-# 🔮 GOLEX tahmin sistemi
-# Kurallar sırası: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
-# Esnek analiz: 5 maçın en az %80'i koşulu sağlıyorsa "True" kabul edilir.
-
-from tools.alt_thesportsdb import last5_home, last5_away, goals
+from tools.alt_apifootball import get_last_events, goals
 
 
-# ------------------------------------------------------------
-# 🔧 Yardımcı Fonksiyonlar
-# ------------------------------------------------------------
-def _ratio_of_valid(evts: list[dict], check_fn) -> float:
-    """
-    Geçerli skorları baz alarak oran döndürür (0.0–1.0).
-    Eksik (None) skorlu maçları saymaz.
-    """
-    valid = 0
-    total = 0
+def _all_matches_scored_at_least(evts, need, as_home):
+    if len(evts) < 2:  # ⚠️ 5 yerine 2 yaptık çünkü API bazen eksik döner
+        return False
     for e in evts:
         g = goals(e)
-        if not g:
-            continue  # skor yoksa geç
-        total += 1
-        if check_fn(g):
-            valid += 1
-    return valid / total if total else 0.0
+        if not g or g[0] is None or g[1] is None:
+            continue
+        team_goals = g[0] if as_home else g[1]
+        if team_goals < need:
+            return False
+    return True
 
 
-def _tolerant(evts: list[dict], check_fn, threshold=0.8) -> bool:
-    """
-    Son maçların en az threshold oranında koşulu sağlıyorsa True.
-    Örn: threshold=0.8 → %80 (5 maçın 4’ü).
-    """
-    if len(evts) < 3:  # örneklem azsa analiz etme
+def _all_matches_over_total(evts, line):
+    if len(evts) < 2:
         return False
-    ratio = _ratio_of_valid(evts, check_fn)
-    return ratio >= threshold
+    for e in evts:
+        g = goals(e)
+        if not g or g[0] is None or g[1] is None:
+            continue
+        if (g[0] + g[1]) < line:
+            return False
+    return True
 
 
-# ------------------------------------------------------------
-# 🎯 Ana Tahmin Fonksiyonu
-# ------------------------------------------------------------
-def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
-    """
-    Kurallar (toleranslı, saha bazlı analiz):
-      ✅ Ev 1.5+:  Ev takımının evdeki son maçlarının %80'inde ≥2 gol
-      ✅ Dep 1.5+: Dep takımının deplasmandaki son maçlarının %80'inde ≥2 gol
-      ✅ KG:       Ev(evde) ve Dep(deplasmanda) %80'inde ≥1 gol
-      ✅ 2.5 ÜST:  Her iki taraf da %80 oranla toplam gol ≥3
-      ✅ KG+2.5:   KG ve 2.5 şartları birlikte sağlanıyorsa
+def _all_matches_scored_at_least_one(evts, as_home):
+    return _all_matches_scored_at_least(evts, 1, as_home)
 
-    Öncelik: KG+2.5 > Ev1.5 > Dep1.5 > 2.5 > KG
-    """
-    h5 = last5_home(home)
-    a5 = last5_away(away)
 
-    info = {
-        "home": home,
-        "away": away,
-        "samples": {
-            "home_last5_home": len(h5),
-            "away_last5_away": len(a5),
-        }
-    }
+def best_pick_for_match(home_id, away_id):
+    h5 = get_last_events(home_id)
+    a5 = get_last_events(away_id)
 
-    # 🧮 Şart kontrolleri
-    ev15 = _tolerant(h5, lambda g: g[0] >= 2)
-    dep15 = _tolerant(a5, lambda g: g[1] >= 2)
+    info = {"home_id": home_id, "away_id": away_id,
+            "samples": {"home_last": len(h5), "away_last": len(a5)}}
 
-    kg_home = _tolerant(h5, lambda g: g[0] >= 1)
-    kg_away = _tolerant(a5, lambda g: g[1] >= 1)
+    ev15 = _all_matches_scored_at_least(h5, 2, True)
+    dep15 = _all_matches_scored_at_least(a5, 2, False)
+    kg_home = _all_matches_scored_at_least_one(h5, True)
+    kg_away = _all_matches_scored_at_least_one(a5, False)
     kg = kg_home and kg_away
-
-    over25_home = _tolerant(h5, lambda g: sum(g) >= 3)
-    over25_away = _tolerant(a5, lambda g: sum(g) >= 3)
+    over25_home = _all_matches_over_total(h5, 3)
+    over25_away = _all_matches_over_total(a5, 3)
     over25 = over25_home and over25_away
-
     kg_over25 = kg and over25
 
-    info["criteria"] = {
-        "ev_1_5": ev15,
-        "dep_1_5": dep15,
-        "kg": kg,
-        "o2_5": over25,
-        "kg_o2_5": kg_over25
-    }
+    info["criteria"] = {"ev_1_5": ev15, "dep_1_5": dep15, "kg": kg,
+                        "o2_5": over25, "kg_o2_5": kg_over25}
 
-    # 🔢 Öncelik sırası
     if kg_over25:
         return "KG + 2.5 ÜST", info
     if ev15:
