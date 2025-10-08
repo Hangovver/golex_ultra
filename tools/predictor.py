@@ -1,45 +1,66 @@
 # tools/predictor.py
-# Tek tahmin çıkarır: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
+# Tahmin sistemi: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
+# Artık toleranslı (5 maçın en az 4’ünde koşulu sağlayan takım geçerli)
+
 from tools.alt_thesportsdb import last5_home, last5_away, goals
 
-def _all_matches_scored_at_least(evts: list[dict], need: int, as_home: bool) -> bool:
-    # as_home=True ise ev sahibi gol sayısına bakar; False ise deplasman golüne
-    if len(evts) < 5:
+
+# ------------------------------------------------------------
+# 🔧 Yardımcı kurallar (toleranslı versiyon)
+# ------------------------------------------------------------
+def _at_least_x_of_last_n(evts: list[dict], need: int, as_home: bool, threshold=0.8) -> bool:
+    """
+    Belirtilen takım son N maçının en az threshold oranında (ör: %80)
+    'need' kadar gol atmış mı?
+    """
+    if len(evts) < 3:
         return False
+
+    good = 0
     for e in evts:
         g = goals(e)
         if not g:
-            return False
+            continue
         hs, aw = g
         team_goals = hs if as_home else aw
-        if team_goals < need:
-            return False
-    return True
+        if team_goals >= need:
+            good += 1
 
-def _all_matches_over_total(evts: list[dict], line: float) -> bool:
-    if len(evts) < 5:
+    return good >= int(len(evts) * threshold)
+
+
+def _matches_over_total(evts: list[dict], line: float, threshold=0.8) -> bool:
+    """
+    Maçların en az threshold oranında (ör: %80)
+    toplam gol sayısı verilen çizginin üstünde mi?
+    """
+    if len(evts) < 3:
         return False
+
+    good = 0
     for e in evts:
         g = goals(e)
         if not g:
-            return False
-        if (g[0] + g[1]) < line:
-            return False
-    return True
+            continue
+        if (g[0] + g[1]) >= line:
+            good += 1
 
-def _all_matches_scored_at_least_one(evts: list[dict], as_home: bool) -> bool:
-    return _all_matches_scored_at_least(evts, 1, as_home)
+    return good >= int(len(evts) * threshold)
 
+
+# ------------------------------------------------------------
+# 🎯 Ana tahmin fonksiyonu
+# ------------------------------------------------------------
 def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
     """
-    Kurallar (son 5 maç – saha bazlı):
-    - Ev 1.5+:    Ev takımının EVDE oynadığı son 5 maçın her birinde ≥2 gol
-    - Dep 1.5+:   Dep takımının DEPLASMANDA oynadığı son 5 maçın her birinde ≥2 gol
-    - KG:         Ev evde son 5'te her maç ≥1, Dep deplasmanda son 5'te her maç ≥1
-    - 2.5:        Hem ev(evde) hem dep(deplasmanda) son 5'te her maç toplam ≥3
+    Kurallar (son 5 maç – saha bazlı, toleranslı):
+    - Ev 1.5+:    Ev takımının EVDE oynadığı son 5 maçın %80'inde ≥2 gol
+    - Dep 1.5+:   Dep takımının DEPLASMANDA oynadığı son 5 maçın %80'inde ≥2 gol
+    - KG:         Ev evde %80 ≥1, Dep deplasmanda %80 ≥1
+    - 2.5:        Hem ev(evde) hem dep(deplasmanda) %80 toplam ≥3
     - KG+2.5:     KG şartları + 2.5 şartları birlikte
 
-    Öncelik: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
+    Öncelik: KG+2.5 > Ev1.5 > Dep1.5 > 2.5 > KG
     """
     h5 = last5_home(home)
     a5 = last5_away(away)
@@ -53,14 +74,14 @@ def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
         }
     }
 
-    # Şartlar
-    ev15 = _all_matches_scored_at_least(h5, 2, as_home=True)
-    dep15 = _all_matches_scored_at_least(a5, 2, as_home=False)
-    kg_home = _all_matches_scored_at_least_one(h5, as_home=True)
-    kg_away = _all_matches_scored_at_least_one(a5, as_home=False)
+    # Şartlar (toleranslı)
+    ev15 = _at_least_x_of_last_n(h5, 2, as_home=True)
+    dep15 = _at_least_x_of_last_n(a5, 2, as_home=False)
+    kg_home = _at_least_x_of_last_n(h5, 1, as_home=True)
+    kg_away = _at_least_x_of_last_n(a5, 1, as_home=False)
     kg = kg_home and kg_away
-    over25_home = _all_matches_over_total(h5, 3)
-    over25_away = _all_matches_over_total(a5, 3)
+    over25_home = _matches_over_total(h5, 3)
+    over25_away = _matches_over_total(a5, 3)
     over25 = over25_home and over25_away
     kg_over25 = kg and over25
 
@@ -72,7 +93,7 @@ def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
         "kg_o2_5": kg_over25
     }
 
-    # Öncelik: KG+2.5 > Ev1.5 > Dep1.5 > 2.5 > KG
+    # 🔢 Öncelik sırası
     if kg_over25:
         return "KG + 2.5 ÜST", info
     if ev15:
