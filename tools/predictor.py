@@ -1,65 +1,65 @@
 # tools/predictor.py
-from tools.alt_apifootball import get_last_events, goals
+from tools.alt_apifootball import get_last_matches
 
+def _over_15_goals(matches, team_name, side):
+    """Belirtilen tarafın maçlarında 2+ gol atıp atmadığı (1.5 üst)"""
+    count = 0
+    for m in matches:
+        if side == "home":
+            if m["homeTeam"] == team_name and m["homeGoals"] >= 2:
+                count += 1
+        else:
+            if m["awayTeam"] == team_name and m["awayGoals"] >= 2:
+                count += 1
+    return count >= 3  # 5 maçtan 3'ünde 2+ gol
 
-def _all_matches_scored_at_least(evts, need, as_home):
-    if len(evts) < 2:  # ⚠️ 5 yerine 2 yaptık çünkü API bazen eksik döner
-        return False
-    for e in evts:
-        g = goals(e)
-        if not g or g[0] is None or g[1] is None:
-            continue
-        team_goals = g[0] if as_home else g[1]
-        if team_goals < need:
-            return False
-    return True
+def _btts(matches):
+    """Her iki takım da gol atmış mı (Both Teams To Score)"""
+    return sum(1 for m in matches if m["homeGoals"] > 0 and m["awayGoals"] > 0) >= 3
 
+def _over25(matches):
+    """Maç 2.5 üst olmuş mu"""
+    return sum(1 for m in matches if m["homeGoals"] + m["awayGoals"] >= 3) >= 3
 
-def _all_matches_over_total(evts, line):
-    if len(evts) < 2:
-        return False
-    for e in evts:
-        g = goals(e)
-        if not g or g[0] is None or g[1] is None:
-            continue
-        if (g[0] + g[1]) < line:
-            return False
-    return True
+def best_pick_for_match(home_team, away_team):
+    """Ana tahmin motoru"""
+    try:
+        home_last = get_last_matches(home_team, "home")
+        away_last = get_last_matches(away_team, "away")
+    except Exception as e:
+        return {"error": str(e)}, {}
 
+    # Kriterler
+    ev15 = _over_15_goals(home_last, home_team, "home")
+    dep15 = _over_15_goals(away_last, away_team, "away")
 
-def _all_matches_scored_at_least_one(evts, as_home):
-    return _all_matches_scored_at_least(evts, 1, as_home)
-
-
-def best_pick_for_match(home_id, away_id):
-    h5 = get_last_events(home_id)
-    a5 = get_last_events(away_id)
-
-    info = {"home_id": home_id, "away_id": away_id,
-            "samples": {"home_last": len(h5), "away_last": len(a5)}}
-
-    ev15 = _all_matches_scored_at_least(h5, 2, True)
-    dep15 = _all_matches_scored_at_least(a5, 2, False)
-    kg_home = _all_matches_scored_at_least_one(h5, True)
-    kg_away = _all_matches_scored_at_least_one(a5, False)
-    kg = kg_home and kg_away
-    over25_home = _all_matches_over_total(h5, 3)
-    over25_away = _all_matches_over_total(a5, 3)
-    over25 = over25_home and over25_away
+    # Kombine 10 maçta analiz
+    combined = home_last + away_last
+    kg = _btts(combined)
+    over25 = _over25(combined)
     kg_over25 = kg and over25
 
-    info["criteria"] = {"ev_1_5": ev15, "dep_1_5": dep15, "kg": kg,
-                        "o2_5": over25, "kg_o2_5": kg_over25}
-
-    if kg_over25:
-        return "KG + 2.5 ÜST", info
+    pick = None
     if ev15:
-        return "Ev 1.5 ÜST", info
-    if dep15:
-        return "Dep 1.5 ÜST", info
-    if over25:
-        return "2.5 ÜST", info
-    if kg:
-        return "KG (Karşılıklı Gol)", info
+        pick = "🏠 Ev 1.5 ÜST"
+    elif dep15:
+        pick = "🚗 Dep 1.5 ÜST"
+    elif kg_over25:
+        pick = "💥 KG + 2.5"
+    elif kg:
+        pick = "⚽ KG VAR"
+    elif over25:
+        pick = "🔥 2.5 ÜST"
 
-    return None, info
+    info = {
+        "criteria": {
+            "ev1.5": ev15,
+            "dep1.5": dep15,
+            "kg": kg,
+            "2.5": over25,
+            "kg+2.5": kg_over25,
+        },
+        "samples": {"Ev": len(home_last), "Dep": len(away_last)},
+    }
+
+    return (pick or "⚪ Uygun tahmin yok"), info
