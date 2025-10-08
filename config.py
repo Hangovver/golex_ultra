@@ -1,21 +1,21 @@
 # config.py
-# ⚙️ Temel yapılandırma
+import os
 
-# — TheSportsDB —
-API_KEY = "099583"  # <- Premium KEY'İN (sadece örnek; kendi KEY'ini yaz)
+# --- TheSportsDB ---
+API_KEY = os.getenv("THESPORTSDB_API_KEY", "099583")
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
-# — Telegram —
-TELEGRAM_TOKEN = "8227478980:AAGF1g0PHGp6j85SG8qPyyP9hYjgfJcWyRU"
-CHAT_ID = "<5876994093>"   # kullanıcı ya da grup ID
+# --- Telegram ---
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8227478980:AAGF1g0PHGp6j85SG8qPyyP9hYjgfJcWyRU")
+CHAT_ID = os.getenv("CHAT_ID", "5876994093")
 
-# — Zamanlama —
-RUN_HOUR = 10                  # Her gün saat 10:00
-TIMEZONE = "Europe/Istanbul"   # Render UTC ise saat kaymasını istemiyorsan bu alan sadece bilgi amaçlı
+# --- Zamanlama ---
+RUN_HOUR = 10
+TIMEZONE = "Europe/Istanbul"
 
-# — Akıllı limit —
-INITIAL_EVENT_LIMIT = 60       # Günlük taranacak maksimum maç (başlangıç)
-MIN_EVENT_LIMIT = 10           # En az bu seviyeye kadar düşebilir
-REDUCE_FACTOR = 0.8            # 429 olursa %20 azalt
-RECOVERY_AFTER_MIN = 60        # 60 dk sonra adım adım toparla (+%10)
-RECOVERY_GROWTH = 1.10         # toparlanma çarpanı
+# --- Akıllı limit ---
+INITIAL_EVENT_LIMIT = 60
+MIN_EVENT_LIMIT = 10
+REDUCE_FACTOR = 0.8
+RECOVERY_AFTER_MIN = 60
+RECOVERY_GROWTH = 1.10
