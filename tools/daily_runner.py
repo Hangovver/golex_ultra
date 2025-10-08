@@ -5,7 +5,7 @@ from config import (
     INITIAL_EVENT_LIMIT, MIN_EVENT_LIMIT,
     REDUCE_FACTOR, RECOVERY_AFTER_MIN, RECOVERY_GROWTH
 )
-from tools.alt_alt_apifootball import get_today_events
+from tools.alt_apifootball import get_today_events
 from tools.predictor import best_pick_for_match
 from tools.telegram import send_message_markdown
 
@@ -107,4 +107,5 @@ def run_and_notify():
     matches = run_daily_analysis()
     report = build_report(matches)
     send_message_markdown(report)
+
 
