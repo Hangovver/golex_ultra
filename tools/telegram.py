@@ -2,15 +2,12 @@
 import requests
 from config import TELEGRAM_TOKEN, CHAT_ID
 
-def send_message_markdown(text: str):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("ℹ️ Telegram bilgileri eksik; mesaj gönderilmedi.")
-        return
+def send_telegram_message(text: str):
+    """Telegram’a mesaj gönderir (HTML destekli)"""
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
-    r = requests.post(url, json=payload, timeout=20)
-    try:
-        r.raise_for_status()
+    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+    r = requests.post(url, json=payload, timeout=10)
+    if not r.ok:
+        print("⚠️ Telegram hata:", r.text)
+    else:
         print(f"✅ Telegram yanıtı: {r.text}")
-    except Exception as e:
-        print(f"⚠️ Telegram gönderim hatası: {e} | {r.text}")
