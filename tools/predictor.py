@@ -1,64 +1,53 @@
 # tools/predictor.py
-# Tahmin sistemi: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
-# Artık toleranslı (5 maçın en az 4’ünde koşulu sağlayan takım geçerli)
+# 🔮 GOLEX tahmin sistemi
+# Kurallar sırası: KG+2.5 > Ev1.5+ > Dep1.5+ > 2.5 > KG
+# Esnek analiz: 5 maçın en az %80'i koşulu sağlıyorsa "True" kabul edilir.
 
 from tools.alt_thesportsdb import last5_home, last5_away, goals
 
 
 # ------------------------------------------------------------
-# 🔧 Yardımcı kurallar (toleranslı versiyon)
+# 🔧 Yardımcı Fonksiyonlar
 # ------------------------------------------------------------
-def _at_least_x_of_last_n(evts: list[dict], need: int, as_home: bool, threshold=0.8) -> bool:
+def _ratio_of_valid(evts: list[dict], check_fn) -> float:
     """
-    Belirtilen takım son N maçının en az threshold oranında (ör: %80)
-    'need' kadar gol atmış mı?
+    Geçerli skorları baz alarak oran döndürür (0.0–1.0).
+    Eksik (None) skorlu maçları saymaz.
     """
-    if len(evts) < 3:
-        return False
-
-    good = 0
+    valid = 0
+    total = 0
     for e in evts:
         g = goals(e)
         if not g:
-            continue
-        hs, aw = g
-        team_goals = hs if as_home else aw
-        if team_goals >= need:
-            good += 1
-
-    return good >= int(len(evts) * threshold)
+            continue  # skor yoksa geç
+        total += 1
+        if check_fn(g):
+            valid += 1
+    return valid / total if total else 0.0
 
 
-def _matches_over_total(evts: list[dict], line: float, threshold=0.8) -> bool:
+def _tolerant(evts: list[dict], check_fn, threshold=0.8) -> bool:
     """
-    Maçların en az threshold oranında (ör: %80)
-    toplam gol sayısı verilen çizginin üstünde mi?
+    Son maçların en az threshold oranında koşulu sağlıyorsa True.
+    Örn: threshold=0.8 → %80 (5 maçın 4’ü).
     """
-    if len(evts) < 3:
+    if len(evts) < 3:  # örneklem azsa analiz etme
         return False
-
-    good = 0
-    for e in evts:
-        g = goals(e)
-        if not g:
-            continue
-        if (g[0] + g[1]) >= line:
-            good += 1
-
-    return good >= int(len(evts) * threshold)
+    ratio = _ratio_of_valid(evts, check_fn)
+    return ratio >= threshold
 
 
 # ------------------------------------------------------------
-# 🎯 Ana tahmin fonksiyonu
+# 🎯 Ana Tahmin Fonksiyonu
 # ------------------------------------------------------------
 def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
     """
-    Kurallar (son 5 maç – saha bazlı, toleranslı):
-    - Ev 1.5+:    Ev takımının EVDE oynadığı son 5 maçın %80'inde ≥2 gol
-    - Dep 1.5+:   Dep takımının DEPLASMANDA oynadığı son 5 maçın %80'inde ≥2 gol
-    - KG:         Ev evde %80 ≥1, Dep deplasmanda %80 ≥1
-    - 2.5:        Hem ev(evde) hem dep(deplasmanda) %80 toplam ≥3
-    - KG+2.5:     KG şartları + 2.5 şartları birlikte
+    Kurallar (toleranslı, saha bazlı analiz):
+      ✅ Ev 1.5+:  Ev takımının evdeki son maçlarının %80'inde ≥2 gol
+      ✅ Dep 1.5+: Dep takımının deplasmandaki son maçlarının %80'inde ≥2 gol
+      ✅ KG:       Ev(evde) ve Dep(deplasmanda) %80'inde ≥1 gol
+      ✅ 2.5 ÜST:  Her iki taraf da %80 oranla toplam gol ≥3
+      ✅ KG+2.5:   KG ve 2.5 şartları birlikte sağlanıyorsa
 
     Öncelik: KG+2.5 > Ev1.5 > Dep1.5 > 2.5 > KG
     """
@@ -74,15 +63,18 @@ def best_pick_for_match(home: str, away: str) -> tuple[str | None, dict]:
         }
     }
 
-    # Şartlar (toleranslı)
-    ev15 = _at_least_x_of_last_n(h5, 2, as_home=True)
-    dep15 = _at_least_x_of_last_n(a5, 2, as_home=False)
-    kg_home = _at_least_x_of_last_n(h5, 1, as_home=True)
-    kg_away = _at_least_x_of_last_n(a5, 1, as_home=False)
+    # 🧮 Şart kontrolleri
+    ev15 = _tolerant(h5, lambda g: g[0] >= 2)
+    dep15 = _tolerant(a5, lambda g: g[1] >= 2)
+
+    kg_home = _tolerant(h5, lambda g: g[0] >= 1)
+    kg_away = _tolerant(a5, lambda g: g[1] >= 1)
     kg = kg_home and kg_away
-    over25_home = _matches_over_total(h5, 3)
-    over25_away = _matches_over_total(a5, 3)
+
+    over25_home = _tolerant(h5, lambda g: sum(g) >= 3)
+    over25_away = _tolerant(a5, lambda g: sum(g) >= 3)
     over25 = over25_home and over25_away
+
     kg_over25 = kg and over25
 
     info["criteria"] = {
